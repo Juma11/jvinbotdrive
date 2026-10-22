@@ -3,7 +3,7 @@
 Android controller for the JVin-Bot ESP32 4WD car. Runs on a phone and on the
 HainoTeko FG-3 watch (Android 8.1).
 
-- **Tilt:** hold the round button, tilt to drive, release to stop. Your pose at the
+- **Tilt:** hold the round button (or tap on/off, default on the watch), tilt to drive. Your pose at the
   press becomes neutral. Uses only the accelerometer, so no gyro needed.
 - **Pad:** on-screen joystick. Default on phones.
 - **Buttons:** hold ▲ ▼ ◀ ▶ to drive, two at once to curve, STOP in the middle.

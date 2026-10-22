@@ -143,6 +143,19 @@ object Car {
         val m = maxOf(1f, kotlin.math.abs(l), kotlin.math.abs(r))
         l /= m
         r /= m
-        return Pair((l * 255 * speed).toInt(), (r * 255 * speed).toInt())
+        return Pair(toPwm(l, speed), toPwm(r, speed))
+    }
+
+    /**
+     * Below about 90 PWM the motors hum but do not turn, because the L298N drops ~2 V.
+     * So any non-zero command starts at MIN_PWM and scales up to the speed limit.
+     */
+    const val MIN_PWM = 90
+
+    private fun toPwm(v: Float, speed: Float): Int {
+        if (kotlin.math.abs(v) < 0.02f) return 0
+        val top = maxOf(MIN_PWM.toFloat(), 255f * speed)
+        val out = MIN_PWM + kotlin.math.abs(v) * (top - MIN_PWM)
+        return (if (v > 0) out else -out).toInt().coerceIn(-255, 255)
     }
 }

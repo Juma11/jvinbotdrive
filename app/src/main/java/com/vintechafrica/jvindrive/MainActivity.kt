@@ -40,8 +40,12 @@ object Prefs {
     fun setSpeedIdx(c: Context, v: Int) = p(c).edit().putInt("speed", v).apply()
     fun sensIdx(c: Context) = p(c).getInt("sens", 1)
     fun setSensIdx(c: Context, v: Int) = p(c).edit().putInt("sens", v).apply()
-    fun invFwd(c: Context) = p(c).getBoolean("invFwd", false)
-    fun setInvFwd(c: Context, v: Boolean) = p(c).edit().putBoolean("invFwd", v).apply()
+    // New key: the default forward direction changed in build 3, so old flips must not carry over.
+    fun invFwd(c: Context) = p(c).getBoolean("invFwd2", false)
+    fun setInvFwd(c: Context, v: Boolean) = p(c).edit().putBoolean("invFwd2", v).apply()
+    /** Tap once to start tilt driving, tap again to stop. Default on the watch. */
+    fun tapMode(c: Context) = p(c).getBoolean("tap", isWatch(c))
+    fun setTapMode(c: Context, v: Boolean) = p(c).edit().putBoolean("tap", v).apply()
     fun invTurn(c: Context) = p(c).getBoolean("invTurn", false)
     fun setInvTurn(c: Context, v: Boolean) = p(c).edit().putBoolean("invTurn", v).apply()
 }
@@ -64,6 +68,8 @@ class MainActivity : Activity(), SensorEventListener {
     private var ax0 = 0f
     private var ay0 = 0f
     private var haveSample = false
+    private var pendingNeutral = false
+    private var samples = 0L
     private var holding = false
 
     private val tick = object : Runnable {
@@ -146,7 +152,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         if (Prefs.tilt(this)) {
             registerTilt()
-            val b = text("HOLD\nTO DRIVE", 18f, C.TEXT, bold = true).apply {
+            val b = text(idleLabel(), 18f, C.TEXT, bold = true).apply {
                 gravity = Gravity.CENTER
                 background = oval(C.CARD, C.CYAN, 3)
                 setOnTouchListener { v, e -> onHold(v, e) }
@@ -235,21 +241,31 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     private fun onHold(v: View, e: MotionEvent): Boolean {
+        val tap = Prefs.tapMode(this)
+        if (tap && e.actionMasked == MotionEvent.ACTION_DOWN && holding) {
+            // Second tap stops.
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            release()
+            return true
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                if (!haveSample) return true
                 // Your current pose becomes neutral. After any drop the car never moves until you press again.
-                ax0 = ax
-                ay0 = ay
+                if (haveSample) {
+                    ax0 = ax
+                    ay0 = ay
+                } else {
+                    pendingNeutral = true
+                }
                 holding = true
                 v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 holdButton?.background = oval(C.GREEN)
-                holdButton?.text = "DRIVING"
+                holdButton?.text = if (tap) "DRIVING\ntap to stop" else "DRIVING"
                 Car.left = 0
                 Car.right = 0
                 Car.driving = true
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> release()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (!tap) release()
         }
         return true
     }
@@ -261,8 +277,10 @@ class MainActivity : Activity(), SensorEventListener {
         Car.left = 0
         Car.right = 0
         holdButton?.background = oval(C.CARD, C.CYAN, 3)
-        holdButton?.text = "HOLD\nTO DRIVE"
+        holdButton?.text = idleLabel()
     }
+
+    private fun idleLabel() = if (Prefs.tapMode(this)) "TAP\nTO DRIVE" else "HOLD\nTO DRIVE"
 
     // ---------- tilt ----------
 
@@ -273,11 +291,17 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     override fun onSensorChanged(e: SensorEvent) {
+        samples++
         val a = 0.25f
         if (!haveSample) {
             ax = e.values[0]
             ay = e.values[1]
             haveSample = true
+            if (pendingNeutral) {
+                ax0 = ax
+                ay0 = ay
+                pendingNeutral = false
+            }
         } else {
             ax += a * (e.values[0] - ax)
             ay += a * (e.values[1] - ay)
@@ -285,9 +309,18 @@ class MainActivity : Activity(), SensorEventListener {
         if (!holding) return
         val range = Prefs.RANGES[Prefs.sensIdx(this)]
         // Top edge down = forward. Right edge down = turn right.
-        var fwd = -(ay - ay0) / range
+        // Tilt the top edge up / toward you to go forward (direction confirmed on the device).
+        var fwd = (ay - ay0) / range
         var turn = -(ax - ax0) / range
         if (Prefs.invFwd(this)) fwd = -fwd
+        // Tap mode has no finger on the screen, so a dropped arm or a fall must stop the car.
+        // About 45 degrees from the start pose, whatever the sensitivity setting.
+        if (Prefs.tapMode(this) && (abs(ay - ay0) > 7f || abs(ax - ax0) > 7f)) {
+            release()
+            stage.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            readout.text = "Stopped: tilted too far"
+            return
+        }
         if (Prefs.invTurn(this)) turn = -turn
         drive(fwd, turn, true)
     }
@@ -325,6 +358,10 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     private fun refreshStatus() {
+        if (holding && Prefs.tapMode(this) && !Car.online) {
+            release()
+            stage.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
         if (Car.online) {
             status.text = "● Car ${Car.rttMs} ms"
             status.background = rounded(if (Car.rttMs in 0..150) C.GREEN else C.ORANGE, 14)
@@ -332,8 +369,13 @@ class MainActivity : Activity(), SensorEventListener {
             status.text = "● No car"
             status.background = rounded(C.RED, 14)
         }
-        readout.text = if (Car.driving) "L ${Car.left}   R ${Car.right}" else
-            if (Car.online) "Ready" else "Join JVin-Bot Wi-Fi"
+        val tiltInfo = if (!Prefs.tilt(this)) "" else when {
+            sensors?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) == null -> "  ·  No tilt sensor"
+            samples == 0L -> "  ·  Tilt sensor silent"
+            else -> "  ·  tilt x %.1f y %.1f".format(ax - (if (holding) ax0 else 0f), ay - (if (holding) ay0 else 0f))
+        }
+        readout.text = (if (Car.driving) "L ${Car.left}   R ${Car.right}" else
+            if (Car.online) "Ready" else "Join JVin-Bot Wi-Fi") + tiltInfo
     }
 
     private fun openWifi() {
@@ -374,6 +416,14 @@ class SettingsActivity : Activity() {
         val t = Prefs.invTurn(this)
         body.addView(tile("Flip steering: ${if (t) "On" else "Off"}", "Use if tilting right turns left", if (t) C.ORANGE else C.CARD2) {
             Prefs.setInvTurn(this, !t)
+            render()
+        })
+        val tapOn = Prefs.tapMode(this)
+        body.addView(tile("Tilt start: ${if (tapOn) "Tap on/off" else "Hold to drive"}",
+            if (tapOn) "Tap to start, tap again to stop. Also stops if the link drops, you leave the app or tilt too far."
+            else "Hold the button while driving, release to stop. Safest.",
+            if (tapOn) C.ORANGE else C.GREEN) {
+            Prefs.setTapMode(this, !tapOn)
             render()
         })
         body.addView(tile("Join car Wi-Fi", "Network JVin-Bot, password vintech254. Stay connected if Android says no internet.", C.BLUE) {
