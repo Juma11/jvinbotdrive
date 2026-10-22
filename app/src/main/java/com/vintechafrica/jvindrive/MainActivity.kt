@@ -29,8 +29,13 @@ object Prefs {
     val RANGE_NAMES = arrayOf("Low", "Medium", "High")
 
     fun isWatch(c: Context) = c.resources.configuration.smallestScreenWidthDp < 320
-    fun tilt(c: Context) = p(c).getBoolean("tilt", isWatch(c))
-    fun setTilt(c: Context, v: Boolean) = p(c).edit().putBoolean("tilt", v).apply()
+    const val TILT = 0
+    const val PAD = 1
+    const val BUTTONS = 2
+    val MODE_NAMES = arrayOf("Tilt", "Pad", "Buttons")
+    fun mode(c: Context) = p(c).getInt("mode", if (isWatch(c)) TILT else PAD)
+    fun setMode(c: Context, v: Int) = p(c).edit().putInt("mode", v).apply()
+    fun tilt(c: Context) = mode(c) == TILT
     fun speedIdx(c: Context) = p(c).getInt("speed", 0)
     fun setSpeedIdx(c: Context, v: Int) = p(c).edit().putInt("speed", v).apply()
     fun sensIdx(c: Context) = p(c).getInt("sens", 1)
@@ -86,8 +91,8 @@ class MainActivity : Activity(), SensorEventListener {
             renderChips()
         }
         modeChip = chip("", C.CARD2) {
-            if (holding) return@chip
-            Prefs.setTilt(this, !Prefs.tilt(this))
+            if (holding || Car.driving) return@chip
+            Prefs.setMode(this, (Prefs.mode(this) + 1) % Prefs.MODE_NAMES.size)
             buildStage()
         }
         root.addView(hbox().apply {
@@ -148,6 +153,8 @@ class MainActivity : Activity(), SensorEventListener {
             }
             holdButton = b
             stage.addView(b, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
+        } else if (Prefs.mode(this) == Prefs.BUTTONS) {
+            stage.addView(buildButtons(size), FrameLayout.LayoutParams(size, size, Gravity.CENTER))
         } else {
             val pad = PadView(this) { x, y, down ->
                 if (down && !Car.driving) stage.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -155,6 +162,76 @@ class MainActivity : Activity(), SensorEventListener {
             }
             stage.addView(pad, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
         }
+    }
+
+    // ---------- buttons ----------
+
+    private var pressed = 0               // bit mask of held arrows
+    private val UP = 1
+    private val DOWN = 2
+    private val LEFT = 4
+    private val RIGHT = 8
+
+    /** Cross of four hold-to-drive arrows with a STOP in the middle. */
+    private fun buildButtons(size: Int): View {
+        val cell = size / 3
+        val grid = FrameLayout(this)
+        fun arrow(label: String, bit: Int, col: Int, row: Int) {
+            val b = text(label, 26f, C.TEXT, bold = true).apply {
+                gravity = Gravity.CENTER
+                background = rounded(C.CARD2, 20)
+                setOnTouchListener { v, e ->
+                    when (e.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            if (pressed == 0) v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            pressed = pressed or bit
+                            background = rounded(C.CYAN, 20)
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            pressed = pressed and bit.inv()
+                            background = rounded(C.CARD2, 20)
+                        }
+                    }
+                    applyButtons()
+                    true
+                }
+            }
+            val pad = dp(3)
+            grid.addView(b, FrameLayout.LayoutParams(cell - 2 * pad, cell - 2 * pad).apply {
+                leftMargin = col * cell + pad
+                topMargin = row * cell + pad
+            })
+        }
+        arrow("▲", UP, 1, 0)
+        arrow("◀", LEFT, 0, 1)
+        arrow("▶", RIGHT, 2, 1)
+        arrow("▼", DOWN, 1, 2)
+        val stop = text("STOP", 13f, C.TEXT, bold = true).apply {
+            gravity = Gravity.CENTER
+            background = oval(C.RED)
+            setOnClickListener {
+                pressed = 0
+                applyButtons()
+            }
+        }
+        val pad = dp(10)
+        grid.addView(stop, FrameLayout.LayoutParams(cell - 2 * pad, cell - 2 * pad).apply {
+            leftMargin = cell + pad
+            topMargin = cell + pad
+        })
+        return grid
+    }
+
+    private fun applyButtons() {
+        val fwd = (if (pressed and UP != 0) 1f else 0f) - (if (pressed and DOWN != 0) 1f else 0f)
+        val side = (if (pressed and RIGHT != 0) 1f else 0f) - (if (pressed and LEFT != 0) 1f else 0f)
+        if (fwd == 0f && side == 0f) {
+            drive(0f, 0f, false)
+            return
+        }
+        // Arrow alone spins in place; with forward or back it curves.
+        val turn = if (fwd == 0f) side else side * 0.5f
+        drive(fwd, turn, true)
     }
 
     private fun onHold(v: View, e: MotionEvent): Boolean {
@@ -179,6 +256,7 @@ class MainActivity : Activity(), SensorEventListener {
 
     private fun release() {
         holding = false
+        pressed = 0
         Car.driving = false
         Car.left = 0
         Car.right = 0
@@ -243,7 +321,7 @@ class MainActivity : Activity(), SensorEventListener {
 
     private fun renderChips() {
         speedChip.text = "${(Prefs.SPEEDS[Prefs.speedIdx(this)] * 100).toInt()}%"
-        modeChip.text = if (Prefs.tilt(this)) "Tilt" else "Pad"
+        modeChip.text = Prefs.MODE_NAMES[Prefs.mode(this)]
     }
 
     private fun refreshStatus() {

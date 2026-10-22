@@ -6,6 +6,7 @@ HainoTeko FG-3 watch (Android 8.1).
 - **Tilt:** hold the round button, tilt to drive, release to stop. Your pose at the
   press becomes neutral. Uses only the accelerometer, so no gyro needed.
 - **Pad:** on-screen joystick. Default on phones.
+- **Buttons:** hold ▲ ▼ ◀ ▶ to drive, two at once to curve, STOP in the middle.
 - Speed limit 40 / 70 / 100 %, live link status with round-trip time.
 - Binds to the car's Wi-Fi directly, so a device with mobile data still reaches the car.
 
