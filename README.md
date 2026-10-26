@@ -254,3 +254,20 @@ Quota guard: at most 3 AI requests per question, 2 s between questions, 300 per 
 - Settings > Screen brightness (default 55%). Keep it at 60% or lower on AMOLED.
 - On first start it asks to ignore battery optimisation. Say Allow, or Samsung will throttle it.
 - Keys are stored per phone: paste your Groq key again on the new phone.
+
+## Music (v10)
+
+| Say (after "hey vinbot") | What happens |
+|---|---|
+| make a beat / drop a beat / amapiano beat / afrobeat beat / hip hop beat / house beat / dancehall beat | VinBot makes an original beat on the phone (offline) and dances. Plays up to 2 minutes. |
+| make a song / rap / make a song about Nairobi | AI writes 8 original lines, VinBot raps them over a fresh beat. Offline it uses its own built-in raps. |
+| sing / sing twinkle twinkle / sing happy birthday to Brian | Karaoke style: the phone plays the tune, VinBot speaks each line on time. |
+| play music / play amapiano / play afrobeat / play gospel ... | Streams free Creative Commons music from Jamendo (needs a free Jamendo client ID in settings). Shows track and artist. |
+| play <song or artist> | Searches Jamendo. Popular commercial songs are usually not there. |
+| play <song> on spotify / on youtube / on youtube music | Opens that app and plays it there (licensed). VinBot steps aside while it plays. |
+| next song, louder, quieter | Controls |
+| stop / stop music / tap the face / open palm | Music off |
+
+While music plays, the mic hears the music, so only "stop" and "hey vinbot" work. Saying "hey vinbot" turns the music off so it can hear you.
+
+**Jamendo client ID:** free for non-commercial use at devportal.jamendo.com. Paste it in settings. Jamendo's terms require crediting the artist and Jamendo, which the screen does.

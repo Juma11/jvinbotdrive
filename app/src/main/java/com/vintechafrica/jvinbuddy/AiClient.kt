@@ -155,6 +155,43 @@ class AiClient(private val prefs: Prefs) {
         }
     }
 
+    /** Plain text completion (no robot persona, keeps line breaks). Used for song lyrics. */
+    suspend fun complete(prompt: String): String? = withContext(Dispatchers.IO) {
+        if (mode == "none" || !underDailyCap()) return@withContext null
+        try {
+            when (mode) {
+                "groq" -> {
+                    val body = JSONObject()
+                        .put("model", "openai/gpt-oss-20b")
+                        .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+                        .put("temperature", 0.9)
+                        .put("max_completion_tokens", 900)
+                        .put("reasoning_effort", "low")
+                    val req = Request.Builder().url("https://api.groq.com/openai/v1/chat/completions")
+                        .header("Authorization", "Bearer ${prefs.groqKey}")
+                        .post(body.toString().toRequestBody(JSON)).build()
+                    http.newCall(req).execute().use { res ->
+                        if (!res.isSuccessful) return@withContext null
+                        JSONObject(res.body?.string().orEmpty()).optJSONArray("choices")?.optJSONObject(0)
+                            ?.optJSONObject("message")?.optString("content")
+                    }
+                }
+                "gemini" -> {
+                    val body = JSONObject()
+                        .put("contents", JSONArray().put(JSONObject().put("role", "user")
+                            .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                        .put("generationConfig", JSONObject().put("maxOutputTokens", 600)
+                            .put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal")))
+                    val (code, text) = geminiPost(geminiModel(), body)
+                    if (code in 200..299) extractGeminiText(text) else null
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // ---------------------------------------------------------------- Groq
     private fun askGroq(text: String): Pair<Emotion, String> {
         var useSearch = true

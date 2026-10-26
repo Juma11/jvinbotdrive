@@ -24,6 +24,11 @@ class Prefs(context: Context) {
         get() = sp.getString("groqKey", "") ?: ""
         set(v) = sp.edit().putString("groqKey", v.trim()).apply()
 
+    /** Jamendo client ID (free, devportal.jamendo.com) for streaming Creative Commons music. */
+    var jamendoId: String
+        get() = sp.getString("jamendoId", "") ?: ""
+        set(v) = sp.edit().putString("jamendoId", v.trim()).apply()
+
     /** Gemini API key from aistudio.google.com. Stored only on this phone. */
     var geminiKey: String
         get() = sp.getString("geminiKey", "") ?: ""

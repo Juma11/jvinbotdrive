@@ -23,8 +23,8 @@ class Brain(
     private val prefs: Prefs,
     private val scope: CoroutineScope,
     private val speak: (String, Emotion) -> Unit,
-    private val sing: (List<Note>) -> Unit = {},
 ) {
+    lateinit var dj: Dj
     val emotion = MutableStateFlow(Emotion.NEUTRAL)
     val lookX = MutableStateFlow(0f)   // -1 left .. 1 right, as seen on the screen
     val lookY = MutableStateFlow(0f)   // -1 up .. 1 down
@@ -225,6 +225,7 @@ class Brain(
 
     /** Called the instant "stop" is heard, before the sentence ends. */
     fun urgentStop() {
+        if (::dj.isInitialized && dj.isPlaying) dj.stopAll()
         cancelMove()
         drive(0, 0)
         follow.value = false
@@ -397,6 +398,19 @@ class Brain(
         if (asleep && !has("go to sleep", "sleep", "lie down")) wake()
 
         when {
+            has("stop music", "stop the music", "pause music", "stop singing", "stop the song") -> {
+                dj.stopAll(); react(Emotion.NEUTRAL, "Okay, music off.", 2000)
+            }
+            has("next song", "skip", "another song") -> dj.next()
+            has("louder", "volume up") -> dj.volume(true)
+            has("quieter", "volume down", "softer") -> dj.volume(false)
+            has("make a song", "make me a song", "rap", "write a song") || "song about" in t || "sing about" in t -> {
+                val topic = Regex("about (.+)").find(t)?.groupValues?.get(1)
+                dj.makeSong(topic, Synth.Style.from(t))
+            }
+            has("beat", "beatbox") -> dj.beat(Synth.Style.from(t))
+            has("play music", "play some music", "music") || (t.startsWith("play ") && Dj.genreTag(t) != null) ->
+                dj.playOnline(null, Dj.genreTag(t))
             has("sing", "happy birthday", "twinkle") -> {
                 val song = when {
                     has("happy birthday") -> Songs.birthday(birthdayName(t))
@@ -596,20 +610,35 @@ class Brain(
         Regex("birthday to ([a-z]+)").find(t)?.groupValues?.get(1)
             ?.replaceFirstChar { it.uppercase() } ?: "friend"
 
-    /** Sings and sways side to side until the song ends. */
-    fun singSong(notes: List<Note>) {
-        if (notes.isEmpty()) return
-        // Rough length: about 0.45 s per syllable, longer for slow notes.
-        val ms = notes.sumOf { (450 / it.rate).toDouble() }.toLong()
+    /** Karaoke song: the tune plays as music, VinBot says the lines on time. */
+    fun singSong(song: Song) {
+        if (::dj.isInitialized) dj.sing(song)
+    }
+
+    /** Dances to the beat for [ms]: sways on each beat, eyes bob, music face. */
+    fun danceTo(bpm: Int, ms: Long) {
         setEmotion(Emotion.SINGING, ms)
-        sing(notes)
-        val sways = (ms / 1200).toInt().coerceIn(1, 40)
+        val beat = 60_000L / bpm
         val steps = mutableListOf<Step>()
-        repeat(sways) {
-            steps += Step(110, -110, 220); steps += Step(0, 0, 380)
-            steps += Step(-110, 110, 220); steps += Step(0, 0, 380)
+        var t = 0L
+        var i = 0
+        while (t < ms && steps.size < 2000) {
+            val dir = if (i % 2 == 0) 1 else -1
+            steps += Step(100 * dir, -100 * dir, beat * 35 / 100)
+            steps += Step(0, 0, beat * 65 / 100)
+            t += beat; i++
         }
         performSteps(steps)
+        script {
+            val end = SystemClock.elapsedRealtime() + ms
+            var up = true
+            while (SystemClock.elapsedRealtime() < end && emotion.value == Emotion.SINGING) {
+                idleLookUntil = SystemClock.elapsedRealtime() + beat + 100
+                lookY.value = if (up) -0.25f else 0.2f
+                up = !up
+                delay(beat)
+            }
+        }
     }
 
     // ================================================================ tricks
@@ -786,7 +815,7 @@ class Brain(
                     react(Emotion.DIZZY, "Almost had it.", 2500)
                 }
             },
-            Surprise("hum", 1) { singSong(Songs.all.random().take(7)) },
+            Surprise("hum", 1) { singSong(Songs.all.random()) },
         )
     }
 
@@ -1021,9 +1050,8 @@ class Brain(
             // Slower speed = longer step, so a half turn is still about a half turn.
             val stretch = (1f / speed).coerceIn(1f, 2.5f)
             // Without a recent command the wheels stay still: the face still acts it out.
-            val wheels = motorsAllowed()
             for (step in steps) {
-                if (wheels) drive(step.l, step.r) else drive(0, 0)
+                if (motorsAllowed()) drive(step.l, step.r) else drive(0, 0)
                 delay((step.ms * stretch).toLong())
             }
             drive(0, 0)

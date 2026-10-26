@@ -119,19 +119,14 @@ class Voice(
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jvin-${System.currentTimeMillis()}")
     }
 
-    /** Sing: every note is queued with its own pitch and length. */
-    fun sing(notes: List<Note>) {
-        if (!ttsReady || notes.isEmpty()) return
-        tts.stop()
-        pending.set(notes.size)
+    /** Say a line with a custom pitch and speed (songs and raps). */
+    fun sayWith(text: String, pitch: Float, rate: Float) {
+        if (!ttsReady) return
+        pending.set(1)
         speaking.value = true
-        notes.forEachIndexed { i, n ->
-            tts.setPitch(n.pitch)
-            tts.setSpeechRate(n.rate)
-            tts.speak(n.text, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "sing-$i")
-        }
-        tts.setPitch(1f)
-        tts.setSpeechRate(1f)
+        tts.setPitch(pitch)
+        tts.setSpeechRate(rate)
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "line-${System.currentTimeMillis()}")
     }
 
     fun shutdown() {

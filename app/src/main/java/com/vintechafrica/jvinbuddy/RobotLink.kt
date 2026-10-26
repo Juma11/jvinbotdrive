@@ -60,6 +60,7 @@ class RobotLink(
     private var running = false
     private var sendJob: Job? = null
     private var failures = 0
+    private val seen = HashSet<String>()
     private var connectTimeout: Runnable? = null
 
     @Volatile private var left = 0
@@ -142,6 +143,7 @@ class RobotLink(
             return
         }
         status.value = "searching for body"
+        seen.clear()
         scanning = true
         // No hardware filter: some Samsung phones never report devices through a
         // 128-bit service UUID filter. We check the name and UUID ourselves instead.
@@ -174,6 +176,10 @@ class RobotLink(
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (!scanning) return
+            // Diagnostic: how many Bluetooth devices this phone can see at all
+            if (seen.add(result.device.address)) {
+                status.value = "searching for body (${seen.size} BT devices nearby, none is VinBot)"
+            }
             val record = result.scanRecord
             val name = record?.deviceName ?: result.device.name
             val hasService = record?.serviceUuids?.any { it.uuid == SERVICE } == true
@@ -186,6 +192,7 @@ class RobotLink(
 
         override fun onScanFailed(errorCode: Int) {
             Log.w(TAG, "Scan failed $errorCode")
+            status.value = "bluetooth scan failed (code $errorCode) - restart Bluetooth"
             scanning = false
             retryLater(3000)
         }
@@ -203,13 +210,13 @@ class RobotLink(
 
     private fun onFailure() {
         failures++
+        status.value = "found VinBot but connection failed ($failures) - retrying"
         // A saved address that keeps failing may be a different board. Rescan.
         if (failures >= 5 && prefs.robotAddress.isNotBlank()) {
             Log.w(TAG, "Saved body unreachable, scanning again")
             prefs.robotAddress = ""
             failures = 0
         }
-        status.value = "reconnecting"
         retryLater(2000)
     }
 

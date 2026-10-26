@@ -39,6 +39,12 @@ object Commands {
         // singing
         "sing", "sing a song", "sing for me", "sing happy birthday", "happy birthday",
         "sing twinkle twinkle", "twinkle twinkle",
+        // music
+        "play music", "play some music", "play afrobeat", "play amapiano", "play hip hop", "play reggae",
+        "play gospel", "play jazz", "play rock", "play house music", "play pop", "play chill music",
+        "next song", "skip", "stop music", "stop the music", "louder", "quieter",
+        "make a beat", "drop a beat", "beatbox", "amapiano beat", "afrobeat beat", "hip hop beat",
+        "house beat", "dancehall beat", "make a song", "make me a song", "rap", "rap for me",
         // emotions and tricks (Emo style)
         "be angry", "get angry", "angry", "be scared", "scared", "boo", "be happy", "smile",
         "be sad", "cry", "laugh", "say sorry", "i love you", "show me love", "give me a kiss",

@@ -123,7 +123,6 @@ class MainActivity : ComponentActivity() {
         brain = Brain(
             link, prefs, lifecycleScope,
             speak = { text, emotion -> voice.say(text, emotion) },
-            sing = { notes -> voice.sing(notes) },
         )
         ai = AiClient(prefs)
         hands = try {
@@ -137,6 +136,7 @@ class MainActivity : ComponentActivity() {
         }
         tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands, needClassify = { brain.isStaring() })
         brain.games = Games(brain, hands, prefs, lifecycleScope)
+        brain.dj = Dj(this, brain, voice, ai, prefs, lifecycleScope)
         senses = Senses(
             this,
             onBump = { brain.onBump() },
@@ -259,7 +259,12 @@ class MainActivity : ComponentActivity() {
     private fun onPhrase(text: String) {
         val now = android.os.SystemClock.elapsedRealtime()
         when {
-            Commands.isWake(text) -> askQuestion()
+            Commands.isWake(text) -> {
+                if (brain.dj.isPlaying) brain.dj.stopAll() // music off so it can hear you
+                askQuestion()
+            }
+            // While music plays the mic hears the music: only "stop" and the wake word count.
+            brain.dj.isPlaying && !Commands.isAlways(text) -> {}
             !prefs.wakeRequired || Commands.isAlways(text) || now < armedUntil -> {
                 if (brain.handleCommand(text)) armedUntil = 0L
             }
@@ -305,22 +310,26 @@ class MainActivity : ComponentActivity() {
 
     private fun onHeard(text: String) {
         lastHeard.value = text
-        // 0. "sing about the rain": the AI writes an original song, the robot sings it.
-        val topic = Regex("^sing (?:a song |me a song )?(?:about|for) (.+)").find(Commands.normalize(text))?.groupValues?.get(1)
-        if (topic != null && Net.online(this) && ai.mode != "none") {
-            brain.thinking()
-            lifecycleScope.launch {
-                val (_, lyrics) = ai.ask(
-                    "Write an original, cheerful song about $topic. Exactly 4 short lines, " +
-                        "6 to 8 words each, one line per sentence, ending each with a full stop. Lyrics only."
-                )
-                brain.singSong(Songs.fromLyrics(lyrics))
-            }
+        val norm = Commands.normalize(text)
+        // 0a. "play sauti sol on spotify": hand over to the licensed music app
+        Regex("^(?:please )?play (.+?) on (spotify|youtube music|youtube|boomplay|audiomack)$").find(norm)?.let {
+            brain.dj.openApp(it.groupValues[1], it.groupValues[2])
+            return
+        }
+        // 0b. "sing about the rain" / "make a song about love": AI lyrics, rapped over a beat
+        Regex("(?:sing|song|rap) (?:a song |me a song )?about (.+)").find(norm)?.let {
+            brain.dj.makeSong(it.groupValues[1], Synth.Style.from(norm))
             return
         }
 
         // 1. Commands: always local, work offline.
         if (brain.handleCommand(text)) return
+
+        // 1b. "play <anything>" that wasn't a game: search free online music
+        Regex("^(?:please )?play (.+)$").find(norm)?.let {
+            brain.dj.playOnline(it.groupValues[1], null)
+            return
+        }
 
         // 2. Simple answers: local and instant.
         val online = Net.online(this)
@@ -426,7 +435,7 @@ class MainActivity : ComponentActivity() {
                 .background(Color.Black)
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { brain.pet() },
+                        onTap = { if (brain.dj.isPlaying) brain.dj.stopAll() else brain.pet() },
                         onDoubleTap = { askQuestion() },
                         onLongPress = { showSettings = true },
                     )
@@ -453,7 +462,8 @@ class MainActivity : ComponentActivity() {
             }
 
             // Status text never moves, so it burns in first: show it briefly, then hide.
-            val showText = prefs.showStatus || nowTick < statusUntil
+            // ...but always visible while the body is not connected, so you can see why.
+            val showText = prefs.showStatus || nowTick < statusUntil || linkStatus != "body ok"
             // Errors show for 20 s, then hide
             if (brainError.isNotBlank() && nowTick - errorSince < 20_000 && !showText) {
                 Text(
@@ -471,6 +481,7 @@ class MainActivity : ComponentActivity() {
                     add(if (online) "online" else "offline")
                     add(earsStatus)
                     add("brain ${ai.mode}")
+                    brain.dj.nowPlaying.value?.let { add("\u266B $it") }
                     add("eyes %.1f fps".format(fps))
                     add(
                         when {
@@ -528,6 +539,7 @@ class MainActivity : ComponentActivity() {
         var token by remember { mutableStateOf(prefs.token) }
         var key by remember { mutableStateOf(prefs.geminiKey) }
         var groq by remember { mutableStateOf(prefs.groqKey) }
+        var jamendo by remember { mutableStateOf(prefs.jamendoId) }
         var low by remember { mutableStateOf(prefs.lowBattery.toString()) }
         var invert by remember { mutableStateOf(prefs.invertSteer) }
         var status by remember { mutableStateOf(prefs.showStatus) }
@@ -548,6 +560,8 @@ class MainActivity : ComponentActivity() {
                     Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    OutlinedTextField(jamendo, { jamendo = it }, label = { Text("Jamendo client ID (free music, optional)") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(groq, { groq = it }, label = { Text("Groq API key (free, recommended)") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth())
@@ -600,6 +614,7 @@ class MainActivity : ComponentActivity() {
                     prefs.token = token
                     prefs.geminiKey = key
                     prefs.groqKey = groq
+                    prefs.jamendoId = jamendo
                     low.toFloatOrNull()?.let { prefs.lowBattery = it }
                     prefs.invertSteer = invert
                     prefs.showStatus = status
