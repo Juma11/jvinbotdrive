@@ -5,3 +5,4 @@ local.properties
 *.iml
 .wrangler/
 node_modules/
+app/src/main/assets/model-en-us/

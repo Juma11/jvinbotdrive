@@ -14,6 +14,15 @@ class Prefs(context: Context) {
         get() = sp.getString("token", "") ?: ""
         set(v) = sp.edit().putString("token", v.trim()).apply()
 
+    /** Gemini API key from aistudio.google.com. Stored only on this phone. */
+    var geminiKey: String
+        get() = sp.getString("geminiKey", "") ?: ""
+        set(v) = sp.edit().putString("geminiKey", v.trim()).apply()
+
+    var geminiModel: String
+        get() = sp.getString("geminiModel", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+        set(v) = sp.edit().putString("geminiModel", v.trim()).apply()
+
     /** BLE address of the paired body. Saved after the first scan; empty = scan again. */
     var robotAddress: String
         get() = sp.getString("robotAddress", "") ?: ""

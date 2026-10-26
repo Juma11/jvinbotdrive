@@ -33,7 +33,9 @@ Pins are your JVin-Bot v2 wiring. Unplug the wires on GPIO 5 and 15 if an upload
 
 Battery reading is off (`BATT_PIN -1`). To turn it on, wire a divider from the battery to GPIO 34 (for a 2S pack: 20k to battery, 10k to GND, ratio 3.0) and set `BATT_PIN 34`.
 
-## 2. Worker brain
+## 2. Worker brain (optional)
+
+Skip this if you use a Gemini key in the app. Use the Worker only if other people will install your app, so they never see your key.
 
 ```
 cd worker
@@ -60,8 +62,12 @@ Check the provider's current free limits for search grounding before you leave i
 2. GitHub > Actions > Build APK > download `jvinbuddy-debug-apk`.
 3. Install on the Spark 4. Allow camera, microphone and location. Android 10 needs location for the first Bluetooth scan only.
 4. Turn on Bluetooth and Location for the first run. After the body pairs, location can go off.
-5. Long press the face > settings: Worker URL, robot token.
-6. Google app > Settings > Voice > Offline speech recognition > download English. Without this, the robot is deaf offline.
+5. Long press the face > settings > paste a **Gemini API key** (free from aistudio.google.com). That is all the brain needs. The Worker is optional.
+6. Google app > Settings > Voice > Offline speech recognition > download English. Needed only for questions while offline. Commands are always offline.
+7. Tecno battery saver kills background apps and dims the screen. Phone Master > Battery > App launch / power saving: set JVin Buddy to **manual, all allowed**. Settings > Display: sleep timeout to the maximum as a backup.
+
+Fixed download link for the newest build (after the first push with this workflow):
+`https://github.com/Juma11/jvinbotdrive/releases/latest/download/jvinbuddy.apk`
 
 The repo has a fixed debug key, so each new build installs over the old one.
 
@@ -82,17 +88,44 @@ The repo has a fixed debug key, so each new build installs over the old one.
 | Face, emotions, following, bump reactions | Yes | Yes |
 | Driving the body (BLE) | Yes | Yes |
 | Manual controller (AP) | Yes | Yes |
-| Voice commands | Yes | Yes, with offline English downloaded |
+| Voice commands (always listening) | Yes | Yes |
 | Time, date, name, greetings, battery, jokes | Yes | Yes |
-| Questions and web research | Yes | No, it says it is offline |
+| "hey buddy" questions and web research | Yes | No, it says it is offline |
 
 ## Use
 
-- **Tap face:** it listens (red dot). Motors pause while it listens.
-- **Long press:** settings.
-- **Commands:** stop, stay, follow me, come here, turn left, turn right, spin, dance, good robot, bad robot, go away, go to sleep, wake up. Tap the face to wake it.
-- **Local answers:** time, date, your name, who made you, how are you, what can you do, battery, hello, thanks, jokes (offline).
-- **Anything else** goes to the AI when online.
+No button pressing. The robot always listens for commands, fully offline.
+
+- **Talk to it:** say **"hey buddy"**, wait for the curious face and red dot, then ask anything.
+- **Tap face:** pet it. **Double tap:** ask a question. **Long press:** settings.
+
+**Commands (always on, offline)**
+
+| Say | It does |
+|---|---|
+| bang, bang bang, shoot, play dead | X eyes, falls back, "You got me!", revives after 5 s |
+| stop, freeze, sit, stay, wait | Stops, stops following |
+| come, come here, come on, here boy, follow me | Follows you |
+| look at me, watch me | Turns to face you |
+| go round, go around, turn around | Half turn |
+| spin, roll over | Full spin |
+| go back, move back, back up, reverse | Reverses |
+| go forward, forward, go ahead | Drives forward |
+| turn left, go left, turn right, go right | Turns |
+| dance | Dance routine |
+| speak, bark | "Woof! Woof!" |
+| shake, high five, say hello | Wiggle and hello |
+| jump | Hop |
+| good boy, good dog, good robot, well done | Happy wiggle |
+| bad dog, bad robot, no | Sad, looks away |
+| go away, shut up | Turns away, stops following |
+| go to sleep, sleep, lie down / wake up | Sleeps / wakes |
+
+**On its own:** looks around, peeks left and right, sneezes, yawns and hums when bored, greets you when you come back.
+
+To add a command: add the phrase to `Commands.kt`, then handle it in `Brain.handleCommand`. Use real English words only.
+
+**Local answers (with "hey buddy"):** time, date, your name, who made you, how are you, what can you do, battery, hello, thanks, jokes (offline).
 
 ## Emotions
 
@@ -106,3 +139,4 @@ The repo has a fixed debug key, so each new build installs over the old one.
 | Sad | "bad robot", "go away", offline question | Turns away |
 | Tired | Battery below threshold | Asks to charge |
 | Thinking | Waiting for the AI | Small head shake |
+| Dead | "bang", "shoot", "play dead" | Falls back, X eyes, revives |

@@ -73,6 +73,13 @@ fun RobotFace(
         for (side in listOf(-1, 1)) {
             val cx = w / 2f + side * w * 0.2f + shift
             val eh = (eyeHMax * open).coerceAtLeast(h * 0.02f)
+            if (emotion == Emotion.DEAD) {
+                val r = eyeW * 0.45f
+                val xStroke = h * 0.045f
+                drawLine(color, Offset(cx - r, eyeY - r), Offset(cx + r, eyeY + r), xStroke, StrokeCap.Round)
+                drawLine(color, Offset(cx - r, eyeY + r), Offset(cx + r, eyeY - r), xStroke, StrokeCap.Round)
+                continue
+            }
             drawRoundRect(
                 color = color,
                 topLeft = Offset(cx - eyeW / 2f, eyeY - eh / 2f),

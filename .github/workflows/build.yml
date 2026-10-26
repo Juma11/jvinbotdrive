@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,10 +22,32 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      # Offline speech model (about 40 MB) for the always-on ears.
+      - name: Download offline speech model
+        run: |
+          curl -sSL -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q model.zip
+          mkdir -p app/src/main/assets
+          rm -rf app/src/main/assets/model-en-us
+          mv vosk-model-small-en-us-0.15 app/src/main/assets/model-en-us
+          echo "small-en-us-0.15" > app/src/main/assets/model-en-us/uuid
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk jvinbuddy.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: jvinbuddy-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: jvinbuddy.apk
+
+      # Fixed download link:
+      # https://github.com/Juma11/jvinbotdrive/releases/latest/download/jvinbuddy.apk
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: buddy-${{ github.run_number }}
+          name: JVin Buddy build ${{ github.run_number }}
+          files: jvinbuddy.apk

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.speech.SpeechRecognizer
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,9 +53,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * JVin Buddy. Tap the face to talk. Long press for settings.
- * Works online and offline. Offline it still follows, emotes, obeys commands
- * and answers simple things like the time.
+ * JVin Buddy.
+ *  - Always listening (offline) for dog commands: "come here", "bang", "go round"...
+ *  - Say "hey buddy", then ask anything (needs internet).
+ *  - Tap the face = pet it. Double tap = ask a question. Long press = settings.
  */
 class MainActivity : ComponentActivity() {
 
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var tracker: FaceTracker
     private lateinit var senses: Senses
     private lateinit var ai: AiClient
+    private lateinit var ears: Ears
 
     private var cameraStarted = false
     private var offlineHintGiven = false
@@ -83,6 +86,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemBars()
 
         prefs = Prefs(this)
@@ -90,9 +94,13 @@ class MainActivity : ComponentActivity() {
         voice = Voice(
             this,
             onHeard = ::onHeard,
-            onListenEnd = { brain.paused = false },
+            onListenEnd = {
+                brain.paused = false
+                ears.start()
+            },
             onListenError = ::onListenError,
         )
+        ears = Ears(this, onPhrase = ::onPhrase, onUrgentStop = { brain.urgentStop() })
         brain = Brain(link, prefs, lifecycleScope) { text, emotion -> voice.say(text, emotion) }
         ai = AiClient(prefs)
         tracker = FaceTracker { brain.onFace(it) }
@@ -100,6 +108,8 @@ class MainActivity : ComponentActivity() {
 
         brain.start()
         lifecycleScope.launch { link.battery.collect { brain.onBattery(it) } }
+        // Do not hear our own voice.
+        lifecycleScope.launch { voice.speaking.collect { ears.setPause(it) } }
 
         val missing = permissions.filter { !granted(it) }
         if (missing.isEmpty()) startWhatWeCan() else permLauncher.launch(missing.toTypedArray())
@@ -117,6 +127,10 @@ class MainActivity : ComponentActivity() {
             cameraStarted = true
             tracker.start(this, this)
         }
+        if (granted(Manifest.permission.RECORD_AUDIO)) {
+            ears.load()
+            ears.start()
+        }
         if (bluetoothPermissions.all { granted(it) }) {
             link.start()
         } else {
@@ -128,17 +142,20 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         hideSystemBars()
         senses.start()
+        if (granted(Manifest.permission.RECORD_AUDIO)) ears.start()
     }
 
     override fun onPause() {
         super.onPause()
         senses.stop()
+        ears.stop()
         link.stop()
     }
 
     override fun onDestroy() {
         link.shutdown()
         voice.shutdown()
+        ears.shutdown()
         tracker.shutdown()
         super.onDestroy()
     }
@@ -152,15 +169,25 @@ class MainActivity : ComponentActivity() {
     }
 
     // ---------------------------------------------------------------- talking
-    private fun onTapFace() {
-        if (brain.onTap()) return
+    /** Heard by the always-on ears. */
+    private fun onPhrase(text: String) {
+        if (Commands.isWake(text)) askQuestion() else brain.handleCommand(text)
+    }
+
+    /** Hand the mic to Google speech for one free question. */
+    private fun askQuestion() {
         if (!voice.available) {
-            voice.say("I can't hear. Install or update the Google app.", Emotion.SAD)
+            voice.say("I can't understand questions. Install or update the Google app.", Emotion.SAD)
             return
         }
+        ears.stop()
         brain.paused = true
+        brain.listeningForQuestion()
         link.stop()
-        voice.listen(preferOffline = !Net.online(this))
+        lifecycleScope.launch {
+            delay(300) // let the offline ears release the microphone
+            voice.listen(preferOffline = !Net.online(this@MainActivity))
+        }
     }
 
     private fun onHeard(text: String) {
@@ -223,6 +250,7 @@ class MainActivity : ComponentActivity() {
         val linkStatus by link.status.collectAsState()
         val battery by link.battery.collectAsState()
         val manual by link.manual.collectAsState()
+        val earsStatus by ears.status.collectAsState()
         var showSettings by remember { mutableStateOf(false) }
         var fps by remember { mutableFloatStateOf(0f) }
         var online by remember { mutableStateOf(false) }
@@ -241,7 +269,8 @@ class MainActivity : ComponentActivity() {
                 .background(Color.Black)
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { onTapFace() },
+                        onTap = { brain.pet() },
+                        onDoubleTap = { askQuestion() },
                         onLongPress = { showSettings = true },
                     )
                 }
@@ -253,6 +282,8 @@ class MainActivity : ComponentActivity() {
                     add(if (manual) "MANUAL CONTROL" else linkStatus)
                     battery?.let { add("%.2f V".format(it)) }
                     add(if (online) "online" else "offline")
+                    add(earsStatus)
+                    add("brain ${ai.mode}")
                     add("face %.1f fps".format(fps))
                     add("follow ${if (follow) "on" else "off"}")
                     add(emotion.name.lowercase())
@@ -281,6 +312,7 @@ class MainActivity : ComponentActivity() {
     private fun SettingsDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
         var url by remember { mutableStateOf(prefs.workerUrl) }
         var token by remember { mutableStateOf(prefs.token) }
+        var key by remember { mutableStateOf(prefs.geminiKey) }
         var low by remember { mutableStateOf(prefs.lowBattery.toString()) }
         var invert by remember { mutableStateOf(prefs.invertSteer) }
         var status by remember { mutableStateOf(prefs.showStatus) }
@@ -295,7 +327,11 @@ class MainActivity : ComponentActivity() {
                     Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedTextField(url, { url = it }, label = { Text("Worker URL (https://...)") },
+                    OutlinedTextField(key, { key = it }, label = { Text("Gemini API key (easiest)") },
+                        singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth())
+                    Text("Or use your Cloudflare Worker instead:", fontSize = 12.sp)
+                    OutlinedTextField(url, { url = it }, label = { Text("Worker URL (optional)") },
                         singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(token, { token = it }, label = { Text("Robot token") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
@@ -319,6 +355,7 @@ class MainActivity : ComponentActivity() {
                 TextButton(onClick = {
                     prefs.workerUrl = url
                     prefs.token = token
+                    prefs.geminiKey = key
                     low.toFloatOrNull()?.let { prefs.lowBattery = it }
                     prefs.invertSteer = invert
                     prefs.showStatus = status
