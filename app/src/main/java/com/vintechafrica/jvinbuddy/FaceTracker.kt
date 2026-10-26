@@ -27,7 +27,16 @@ import java.util.concurrent.TimeUnit
  * x: -1 .. 1, your left .. your right (camera image mirrored, like a mirror).
  * y: -1 (top) .. 1 (bottom). size: face width as a fraction of frame width.
  */
-data class FaceInfo(val x: Float, val y: Float, val size: Float, val count: Int = 1)
+data class FaceInfo(
+    val x: Float,
+    val y: Float,
+    val size: Float,
+    val count: Int = 1,
+    /** 0..1, or -1 if unknown */
+    val smile: Float = -1f,
+    /** lower of the two eyes, 0 (closed) .. 1 (open), or -1 if unknown */
+    val eyesOpen: Float = -1f,
+)
 
 /**
  * The robot's eyes. Front camera at low resolution, tuned for the Tecno Spark 4.
@@ -42,7 +51,8 @@ class FaceTracker(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
             .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
-            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
+            // Smile and eyes-open scores: smile mirroring and the staring contest.
+            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
             .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE)
             .setMinFaceSize(0.12f)
             .build()
@@ -119,6 +129,8 @@ class FaceTracker(
                 y = ((it.boundingBox.exactCenterY() / height) * 2f - 1f).coerceIn(-1f, 1f),
                 size = it.boundingBox.width() / width,
                 count = faces.size,
+                smile = it.smilingProbability ?: -1f,
+                eyesOpen = minOf(it.leftEyeOpenProbability ?: -1f, it.rightEyeOpenProbability ?: -1f),
             )
         }
         main.post { onFace(info) }

@@ -43,6 +43,10 @@ object Commands {
         "be angry", "get angry", "angry", "be scared", "scared", "boo", "be happy", "smile",
         "be sad", "cry", "laugh", "say sorry", "i love you", "show me love", "give me a kiss",
         "celebrate", "party", "look around", "do a trick", "show me a trick", "trick",
+        // games and feelings
+        "rock paper scissors", "play rock paper scissors", "staring contest", "peekaboo", "play peekaboo",
+        "play a game", "lets play", "game", "stop the game", "end the game", "stop playing", "again", "play again", "rematch",
+        "how do you feel", "how are you feeling", "how are you",
         // dog stuff
         "speak", "bark", "shake", "high five", "say hello", "fetch",
         "good boy", "good girl", "good dog", "good robot", "well done", "good job",

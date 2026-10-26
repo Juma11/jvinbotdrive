@@ -125,6 +125,32 @@ be angry, be scared, boo, be happy, smile, be sad, cry, laugh, say sorry, i love
 
 Face expressions: neutral, happy, curious, bored, sleepy, surprised, sad, tired, thinking, angry (red, slanted lids, steam), scared (trembling, sweat drop), laugh (bouncing grin), shy (blush, looks away), excited (star eyes, sparkles), crying (tear streams), love (heart eyes), dizzy (spirals), dead (X eyes), singing (notes). The AI can pick any of these for its answers.
 
+**Games (after "hey vinbot")**
+
+| Say | Game |
+|---|---|
+| rock paper scissors | Best of three with real hand shapes. It counts "rock, paper, scissors, shoot!", shows the hand it picked, and keeps score. |
+| staring contest | It stops blinking and watches your eyes. Blink or look away and you lose. It gives up after 10 to 25 s. |
+| peekaboo | Hide your face with your hands; it worries. Show it; it laughs. 4 rounds. |
+| play a game | Picks one of the three |
+| again / rematch | Plays the last game again |
+| stop the game | Ends the game |
+
+Peekaboo also works without asking: cover your face with your hands any time and it reacts.
+
+**Personality that grows**
+
+- **Praise learning:** say "good boy", give a thumbs up or pat it within 10 s of a trick, and it does that trick more often. Say "bad robot" or thumbs down and it does it less. "Do a trick" picks from what you like.
+- **Needs:** social, fun and energy (shown on the status line). Ignored, it gets lonely and asks for attention. No games, it gets bored and asks to play. Too many tricks, it gets tired and naps; pat it to wake it.
+- **Chattier with time:** a new VinBot is quiet. The more you play, the more it talks on its own.
+- **Milestones:** at 50, 100, 250, 500 and 1000 interactions it celebrates your friendship.
+- **"How do you feel?"** It answers from its needs.
+- **Smile mirroring:** smile at it and it smiles back and winks.
+- **Daily surprises:** 16 rare things it does on its own (hiccups, sneezing fits, chasing a bug, practising a dance and getting shy when caught, beatboxing, daydreaming, "Jambo! Hakuna matata!"...). Each waits 3 days before repeating.
+- **Special days:** Kenyan holidays (New Year, Labour Day, Madaraka, Mazingira, Mashujaa, Jamhuri, Christmas, Boxing Day) and your birthday. Set your birthday in settings as MM-dd; it sings Happy Birthday when it first sees you that day.
+
+All of this is saved on the phone, so it remembers between days. Uninstalling resets it.
+
 **Singing**
 
 | Say (after "hey vinbot") | It sings |

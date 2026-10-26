@@ -64,6 +64,18 @@ class HandGestures(
     @Volatile var lastHandAt = 0L
         private set
 
+    /**
+     * Raw hand shape this frame for games: "rock", "paper", "scissors" or null.
+     * No hold time, no cooldown: games read it directly.
+     */
+    @Volatile var shape: String? = null
+        private set
+    @Volatile var shapeAt = 0L
+        private set
+
+    /** While true, signs are not reported (a game is reading raw shapes instead). */
+    @Volatile var muted = false
+
     // Wave tracking: wrist x over the last 1.5 s while the palm is open
     private val palm = ArrayDeque<Pair<Long, Float>>()
 
@@ -83,6 +95,7 @@ class HandGestures(
 
         val hands = result.landmarks()
         if (hands.isEmpty()) {
+            shape = null
             reset()
             return
         }
@@ -94,12 +107,33 @@ class HandGestures(
         val canned = result.gestures().firstOrNull()?.firstOrNull()
             ?.takeIf { it.score() > 0.5f }?.categoryName()
 
+        shape = rawShape(lm, canned)
+        shapeAt = lastHandAt
+        if (muted) return
+
         val sign = classify(lm, canned, ts)
         if (sign == null) {
             candidate = null
             return
         }
         settle(sign, ts)
+    }
+
+    private fun rawShape(lm: List<NormalizedLandmark>, canned: String?): String? {
+        when (canned) {
+            "Closed_Fist" -> return "rock"
+            "Open_Palm" -> return "paper"
+            "Victory" -> return "scissors"
+        }
+        fun d(a: Int, b: Int) = hypot(lm[a].x() - lm[b].x(), lm[a].y() - lm[b].y())
+        fun extended(tip: Int, pip: Int) = d(0, tip) > d(0, pip) * 1.1f
+        val i = extended(8, 6); val m = extended(12, 10); val r = extended(16, 14); val p = extended(20, 18)
+        return when {
+            !i && !m && !r && !p -> "rock"
+            i && m && r && p -> "paper"
+            i && m && !r && !p -> "scissors"
+            else -> null
+        }
     }
 
     private fun classify(lm: List<NormalizedLandmark>, canned: String?, ts: Long): HandSign? {

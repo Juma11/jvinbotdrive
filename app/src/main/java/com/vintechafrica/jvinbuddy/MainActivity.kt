@@ -125,6 +125,7 @@ class MainActivity : ComponentActivity() {
             null
         }
         tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands)
+        brain.games = Games(brain, hands, prefs, lifecycleScope)
         senses = Senses(
             this,
             onBump = { brain.onBump() },
@@ -175,11 +176,13 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         senses.stop()
+        brain.needs.save()
         ears.stop()
         link.stop()
     }
 
     override fun onDestroy() {
+        brain.games.stop()
         link.shutdown()
         voice.shutdown()
         ears.shutdown()
@@ -316,6 +319,8 @@ class MainActivity : ComponentActivity() {
         val manual by link.manual.collectAsState()
         val earsStatus by ears.status.collectAsState()
         val brainError by ai.lastError.collectAsState()
+        val overlay by brain.overlay.collectAsState()
+        val noBlink by brain.noBlink.collectAsState()
         var showSettings by remember { mutableStateOf(false) }
         var fps by remember { mutableFloatStateOf(0f) }
         var online by remember { mutableStateOf(false) }
@@ -342,8 +347,22 @@ class MainActivity : ComponentActivity() {
         ) {
             RobotFace(
                 emotion = emotion, lookX = look, lookY = lookY, winkAt = winkAt,
-                listening = listening, speaking = speaking,
+                listening = listening, speaking = speaking, noBlink = noBlink,
             )
+
+            // Game overlay: hands, scores
+            overlay?.let { text ->
+                Text(
+                    text = text,
+                    color = Color.White,
+                    fontSize = if (text.length <= 3) 96.sp else 40.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
+                        .background(Color(0xAA000000))
+                        .padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+            }
 
             if (prefs.showStatus) {
                 val parts = buildList {
@@ -361,6 +380,8 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                     add("speed ${prefs.speedPercent}%")
+                    val n = brain.needs
+                    add("social %.0f fun %.0f energy %.0f".format(n.social, n.fun_, n.energy))
                     add("follow ${if (follow) "on" else "off"}")
                     add(emotion.name.lowercase())
                 }
@@ -403,6 +424,7 @@ class MainActivity : ComponentActivity() {
         var speed by remember { mutableIntStateOf(prefs.speedPercent) }
         var gestures by remember { mutableStateOf(prefs.gestures) }
         var wake by remember { mutableStateOf(prefs.wakeRequired) }
+        var birthday by remember { mutableStateOf(prefs.birthday) }
         var forget by remember { mutableStateOf(false) }
         val paired = prefs.robotAddress.ifBlank { "none yet" }
 
@@ -426,6 +448,8 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(low, { low = it }, label = { Text("Low battery volts") },
                         singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(birthday, { birthday = it }, label = { Text("Your birthday (MM-dd, e.g. 03-15)") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
                     Text("Motor speed: $speed%")
                     Slider(
                         value = speed.toFloat(),
@@ -461,6 +485,7 @@ class MainActivity : ComponentActivity() {
                     prefs.speedPercent = speed
                     prefs.gestures = gestures
                     prefs.wakeRequired = wake
+                    if (birthday.isBlank() || Regex("\\d{2}-\\d{2}").matches(birthday.trim())) prefs.birthday = birthday
                     if (forget) prefs.robotAddress = ""
                     onSaved()
                 }) { Text("Save") }

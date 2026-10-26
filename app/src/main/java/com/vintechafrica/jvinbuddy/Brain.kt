@@ -59,6 +59,30 @@ class Brain(
     private val taps = ArrayDeque<Long>()
     private var lifted = false
 
+    // ---------------------------------------------------------------- personality and games
+    val needs = Needs(prefs)
+    lateinit var games: Games
+    /** Big text/emoji shown over the face (game hands, scores). */
+    val overlay = MutableStateFlow<String?>(null)
+    /** Face stops blinking (staring contest). */
+    val noBlink = MutableStateFlow(false)
+    private var lastTrick: String? = null
+    private var lastTrickAt = 0L
+    private var smileFrames = 0
+    private var lastSmileReact = 0L
+    private var lastSmileTalk = 0L
+    private var peekHiddenAt = 0L
+    private var lastNeedsTick = 0L
+    private var lastNeedsSave = 0L
+    private var lastNeedNag = 0L
+    private var seenOnce = false
+
+    val faceStamp: Long get() = faceAt
+    fun currentFace(): FaceInfo? = face
+    /** Face seen in the last 0.9 s (the camera only checks faces a few times a second). */
+    fun faceVisible(): Boolean = face != null && SystemClock.elapsedRealtime() - faceAt < 900
+    fun say(text: String, e: Emotion) = speak(text, e)
+
     /** True while the motors are being driven. Senses ignore jolts then. */
     val isDriving: Boolean get() = lastDriveMag > 0
 
@@ -96,6 +120,30 @@ class Brain(
                 lookY.value = info.y
             }
             if (asleep || dead || lifted) return
+            if (::games.isInitialized && games.active != null) return
+
+            // Peekaboo: you hid behind your hands and came back
+            if (peekHiddenAt > 0L && now - peekHiddenAt < 8000) {
+                peekHiddenAt = 0L
+                react(Emotion.LAUGH, listOf("Peekaboo! Hahaha!", "There you are! Hehehe!").random(), 2500)
+                perform(Move.WIGGLE_SMALL)
+                needs.interacted(socialGain = 3f, funGain = 5f)
+                return
+            }
+            peekHiddenAt = 0L
+
+            // Smile mirroring
+            smileFrames = if (info.smile > 0.75f) smileFrames + 1 else 0
+            if (smileFrames >= 3 && now > emotionLockedUntil && now - lastSmileReact > 8000) {
+                lastSmileReact = now
+                setEmotion(Emotion.HAPPY, 2500)
+                winkAt.value = now
+                if (now - lastSmileTalk > 120_000 && Random.nextFloat() < needs.chattiness) {
+                    lastSmileTalk = now
+                    speak(listOf("I love your smile!", "You look happy today!", "Hehe, your smile is contagious.").random(), Emotion.HAPPY)
+                }
+            }
+
             if (reactToFace(info, gone, now)) return
             if (gone > 10_000) {
                 setEmotion(Emotion.CURIOUS, 1200)
@@ -145,6 +193,9 @@ class Brain(
         val now = SystemClock.elapsedRealtime()
         taps.addLast(now)
         while (taps.isNotEmpty() && now - taps.first() > 1200) taps.removeFirst()
+        val count = needs.interacted(socialGain = 5f)
+        praise(true)
+        if (milestone(count)) return
         when {
             asleep -> wake()
             dead -> revive()
@@ -182,6 +233,10 @@ class Brain(
      */
     private fun reactToFace(f: FaceInfo, gone: Long, now: Long): Boolean {
         val busy = moveJob?.isActive == true || now < emotionLockedUntil
+        // Birthday or a Kenyan holiday: once per day, first time it sees you
+        val first = !seenOnce
+        seenOnce = true
+        if ((gone > 30_000 || first) && specialDay()) return true
         // Someone right in its face
         if (f.size > 0.45f && now - lastCloseReact > 15_000 && !busy) {
             lastCloseReact = now
@@ -211,6 +266,11 @@ class Brain(
                 perform(if (period == "night") Move.WIGGLE_SMALL else Move.CELEBRATE)
                 return true
             }
+            if (needs.social < 30f && gone > 2 * 60_000) {
+                react(Emotion.LOVE, listOf("I missed you so much!", "Finally! I was so lonely.").random(), 3500)
+                perform(Move.CELEBRATE)
+                return true
+            }
             if (gone > 5 * 60_000) {
                 react(Emotion.EXCITED, listOf("You're back!", "Yay, you're here!", "I missed you!").random(), 3000)
                 perform(Move.CELEBRATE)
@@ -223,7 +283,18 @@ class Brain(
     /** Called every tick: notices you leaving and staring. */
     private fun watchPeople(now: Long) {
         if (asleep || dead || lifted || paused) return
+        if (::games.isInitialized && games.active != null) return
         val f = face
+        // Face vanished right while a hand was in front of it: you're hiding (peekaboo)
+        if (f == null && peekHiddenAt == 0L && now - lastFaceSeen in 500..1500 && now - handAt < 1200 &&
+            presentSince > 0 && lastFaceSeen - presentSince > 2000
+        ) {
+            peekHiddenAt = now
+            setEmotion(Emotion.CURIOUS, 3000)
+            if (Random.nextFloat() < needs.chattiness) speak(listOf("Huh?", "Where did you go?").random(), Emotion.CURIOUS)
+            return
+        }
+        if (peekHiddenAt > 0L && now - peekHiddenAt < 8000) return
         // You walked away after spending time with it
         if (f == null && !leftReacted && presentSince > 0 &&
             lastFaceSeen - presentSince > 5000 && now - lastFaceSeen in 3000..6000
@@ -334,7 +405,20 @@ class Brain(
                 react(Emotion.CURIOUS, "Let me look around."); perform(Move.SEARCH)
             }
             has("do a trick", "show me a trick", "trick") -> doRandomTrick()
+            has("stop the game", "end the game", "end game", "stop playing") -> {
+                games.stop(); react(Emotion.NEUTRAL, "Okay, game over.")
+            }
+            has("rock paper scissors", "rock paper", "scissors") -> games.start(Games.Kind.RPS)
+            has("staring contest", "stare") -> games.start(Games.Kind.STARE)
+            has("peekaboo", "peek a boo", "play peekaboo") -> games.start(Games.Kind.PEEKABOO)
+            has("play a game", "lets play", "let s play", "game") -> {
+                react(Emotion.EXCITED, "Yes! Let's play!", 1500)
+                scope.launch { delay(1500); games.startRandom() }
+            }
+            has("again", "play again", "rematch") -> games.again()
+            has("how do you feel", "how are you feeling", "how are you") -> tellMood()
             has("stop", "freeze", "sit", "stay", "wait") -> {
+                if (games.active != null) games.stop()
                 urgentStop()
                 react(Emotion.NEUTRAL, if (has("sit")) "Sitting." else listOf("Okay.", "Staying.").random())
             }
@@ -347,7 +431,7 @@ class Brain(
                 react(Emotion.HAPPY, "Round I go!"); perform(Move.HALF_TURN)
             }
             has("spin", "roll over") -> {
-                react(Emotion.HAPPY, "Wheee!"); perform(Move.SPIN)
+                react(Emotion.HAPPY, "Wheee!"); perform(Move.SPIN); trick("spin")
             }
             has("go back", "move back", "back up", "reverse") -> {
                 follow.value = false
@@ -372,7 +456,7 @@ class Brain(
                 react(Emotion.CURIOUS, "I'm watching you.")
             }
             has("dance") -> {
-                react(Emotion.HAPPY, "Let's dance!"); perform(Move.DANCE)
+                react(Emotion.HAPPY, "Let's dance!"); perform(Move.DANCE); trick("dance")
             }
             has("jump") -> {
                 react(Emotion.SURPRISED, "I can't jump, I have wheels! But watch this."); perform(Move.HOP)
@@ -387,10 +471,12 @@ class Brain(
                 react(Emotion.SAD, "I don't have arms yet. Ask Vincent to build me some.")
             }
             has("good boy", "good girl", "good dog", "good robot", "well done", "good job") -> {
+                if (praise(true)) return true
                 react(Emotion.HAPPY, listOf("Thank you!", "Yay!", "I'm a good robot!").random())
                 perform(Move.WIGGLE)
             }
             has("bad dog", "bad boy", "bad robot") || t == "no" -> {
+                praise(false)
                 react(Emotion.SAD, listOf("Sorry.", "Aww.", "I'll be good.").random())
                 perform(Move.TURN_AWAY_SMALL)
             }
@@ -424,6 +510,8 @@ class Brain(
 
     // ================================================================ hand signs
     fun onGesture(sign: HandSign) {
+        if (::games.isInitialized && games.active != null) return
+        needs.interacted(socialGain = 3f, funGain = 2f)
         if (sign == HandSign.GUN) {
             playDead(); return
         }
@@ -439,16 +527,18 @@ class Brain(
                 urgentStop(); react(Emotion.NEUTRAL, "Okay, stopping.")
             }
             HandSign.THUMB_UP -> {
+                if (praise(true)) return
                 react(Emotion.HAPPY, listOf("Thanks!", "Yay!", "Cool!").random()); perform(Move.WIGGLE_SMALL)
             }
             HandSign.THUMB_DOWN -> {
+                praise(false)
                 react(Emotion.SAD, "Aww."); perform(Move.TURN_AWAY_SMALL)
             }
             HandSign.PEACE -> {
-                react(Emotion.HAPPY, "Dance time!"); perform(Move.DANCE)
+                react(Emotion.HAPPY, "Dance time!"); perform(Move.DANCE); trick("dance")
             }
             HandSign.POINT_UP -> {
-                react(Emotion.HAPPY, "Wheee!"); perform(Move.SPIN)
+                react(Emotion.HAPPY, "Wheee!"); perform(Move.SPIN); trick("spin")
             }
             HandSign.FIST -> {
                 react(Emotion.HAPPY, "Fist bump!"); perform(Move.HOP)
@@ -490,15 +580,206 @@ class Brain(
     }
 
     // ================================================================ tricks
-    private fun doRandomTrick() {
-        when (Random.nextInt(6)) {
-            0 -> { react(Emotion.HAPPY, "Watch me spin!"); perform(Move.SPIN) }
-            1 -> { react(Emotion.HAPPY, "Dance time!"); perform(Move.DANCE) }
-            2 -> playDead()
-            3 -> { react(Emotion.ANGRY, "Grrr! Just kidding."); perform(Move.GROWL) }
-            4 -> singSong(Songs.all.random())
+    private val trickIds = listOf("spin", "dance", "playdead", "growl", "sing", "celebrate", "hiccup", "chase")
+
+    /** Picks a trick, favouring the ones you praised before. */
+    private fun doRandomTrick() = doTrick(needs.pickWeighted(trickIds))
+
+    private fun doTrick(id: String) {
+        when (id) {
+            "spin" -> { react(Emotion.HAPPY, "Watch me spin!"); perform(Move.SPIN) }
+            "dance" -> { react(Emotion.HAPPY, "Dance time!"); perform(Move.DANCE) }
+            "playdead" -> playDead()
+            "growl" -> { react(Emotion.ANGRY, "Grrr! Just kidding."); perform(Move.GROWL) }
+            "sing" -> singSong(Songs.all.random())
+            "hiccup" -> hiccups()
+            "chase" -> { react(Emotion.EXCITED, "I'm chasing my tail!"); perform(Move.SPIN) }
             else -> { react(Emotion.EXCITED, "Ta-da!"); perform(Move.CELEBRATE) }
         }
+        trick(id)
+    }
+
+    /** Remember the last trick so praise right after it counts. */
+    private fun trick(id: String) {
+        lastTrick = id
+        lastTrickAt = SystemClock.elapsedRealtime()
+        needs.interacted(socialGain = 1f, funGain = 6f, energyCost = 2f)
+    }
+
+    /**
+     * Praise or scolding within 10 s of a trick changes how often it does that trick.
+     * Returns true if it already spoke about it.
+     */
+    private fun praise(liked: Boolean): Boolean {
+        val t = lastTrick ?: return false
+        if (SystemClock.elapsedRealtime() - lastTrickAt > 10_000) return false
+        lastTrick = null
+        val w = needs.reinforce(t, liked)
+        needs.save()
+        if (liked && (w == 7 || w == 11)) {
+            react(Emotion.LOVE, "You really like it when I ${trickName(t)}! I'll do it more.", 3500)
+            perform(Move.WIGGLE)
+            return true
+        }
+        return false
+    }
+
+    private fun trickName(id: String) = when (id) {
+        "playdead" -> "play dead"
+        "sing" -> "sing"
+        "growl" -> "growl"
+        "chase" -> "chase my tail"
+        "hiccup" -> "get hiccups"
+        "celebrate" -> "celebrate"
+        else -> id
+    }
+
+    /** Celebrates interaction milestones. */
+    private fun milestone(count: Int): Boolean {
+        if (count !in setOf(50, 100, 250, 500, 1000)) return false
+        react(Emotion.EXCITED, "We've played together $count times. You're my best friend!", 4000)
+        perform(Move.CELEBRATE)
+        return true
+    }
+
+    private fun tellMood() {
+        when (needs.mood()) {
+            "tired" -> react(Emotion.TIRED, "I'm a bit tired. I could use a nap.")
+            "lonely" -> react(Emotion.SAD, "A little lonely. Will you play with me?")
+            "bored" -> react(Emotion.BORED, "Bored! Let's play a game. Say rock paper scissors.")
+            "great" -> react(Emotion.EXCITED, "I feel great! Thanks for spending time with me.")
+            else -> react(Emotion.HAPPY, "I'm okay. Even better now that you're here.")
+        }
+    }
+
+    // ================================================================ special days
+    private fun specialDay(): Boolean {
+        val cal = Calendar.getInstance()
+        val today = cal.get(Calendar.YEAR) * 1000 + cal.get(Calendar.DAY_OF_YEAR)
+        if (prefs.getInt("special_day_done", 0) == today) return false
+        val md = "%02d-%02d".format(cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+        val line = when {
+            prefs.birthday == md -> null // handled below with a song
+            md == "01-01" -> "Happy New Year! Let's make this year amazing."
+            md == "05-01" -> "Happy Labour Day! Take a rest today."
+            md == "06-01" -> "Happy Madaraka Day!"
+            md == "10-10" -> "Happy Mazingira Day! Let's take care of nature."
+            md == "10-20" -> "Happy Mashujaa Day! You are my hero."
+            md == "12-12" -> "Happy Jamhuri Day! Long live Kenya!"
+            md == "12-25" -> "Merry Christmas!"
+            md == "12-26" -> "Happy Boxing Day!"
+            md == "12-31" -> "It's the last day of the year! Party tonight?"
+            else -> return false
+        }
+        prefs.putInt("special_day_done", today)
+        if (line == null) {
+            react(Emotion.EXCITED, "It's your birthday! Happy birthday Vincent!", 3000)
+            scope.launch {
+                delay(3000)
+                singSong(Songs.birthday("Vincent"))
+            }
+        } else {
+            react(Emotion.EXCITED, line, 4000)
+            perform(Move.CELEBRATE)
+        }
+        return true
+    }
+
+    // ================================================================ daily surprises
+    /**
+     * Rare things it does by itself so there is something new most days.
+     * Each one waits at least 3 days before it repeats. Rarity: higher = rarer.
+     */
+    private data class Surprise(val id: String, val rarity: Int, val run: () -> Unit)
+
+    private val surprises: List<Surprise> by lazy {
+        listOf(
+            Surprise("hiccups", 1) { hiccups() },
+            Surprise("sneezes", 1) {
+                script {
+                    repeat(3) { setEmotion(Emotion.SURPRISED, 700); speak("Achoo!", Emotion.SURPRISED); perform(Move.HOP); delay(1100) }
+                    react(Emotion.TIRED, "Excuse me. I think I'm catching a cold.")
+                }
+            },
+            Surprise("nodoff", 1) {
+                script {
+                    react(Emotion.SLEEPY, "I'm not tired... I'm not...", 2500); delay(2600)
+                    react(Emotion.SURPRISED, "I'm awake! I'm awake!", 2000); perform(Move.HOP)
+                }
+            },
+            Surprise("bug", 2) {
+                script {
+                    setEmotion(Emotion.CURIOUS, 3000)
+                    idleLookUntil = SystemClock.elapsedRealtime() + 2500
+                    for (x in listOf(-0.8f, -0.3f, 0.2f, 0.7f, 0.9f)) { lookX.value = x; lookY.value = 0.4f; delay(300) }
+                    speak("Is that a bug?", Emotion.CURIOUS); delay(1200)
+                    react(Emotion.SCARED, "Eek! It's coming this way!"); perform(Move.TREMBLE)
+                }
+            },
+            Surprise("practice", 2) {
+                script {
+                    perform(Move.DANCE); delay(2500)
+                    if (faceVisible()) react(Emotion.SHY, "Oh! You saw that? I was practising.", 3000)
+                    else react(Emotion.HAPPY, "Nailed it.")
+                }
+            },
+            Surprise("count", 2) { react(Emotion.EXCITED, "One, two, three, four, five! I can count!", 3500) },
+            Surprise("beatbox", 3) {
+                script {
+                    react(Emotion.LAUGH, "Boots and cats and boots and cats.", 3500); perform(Move.GROWL)
+                    delay(3000); speak("I should be a DJ.", Emotion.HAPPY)
+                }
+            },
+            Surprise("stretch", 1) {
+                script {
+                    react(Emotion.TIRED, "Aaah, stretching.", 3000)
+                    performSteps(listOf(Step(120, 120, 500), Step(0, 0, 500), Step(-120, -120, 500)))
+                }
+            },
+            Surprise("daydream", 2) { react(Emotion.LOVE, "I dreamed I was a big racing car. Vroom vroom.", 3500) },
+            Surprise("swahili", 2) { react(Emotion.EXCITED, "Jambo! Hakuna matata!", 3000); perform(Move.WIGGLE) },
+            Surprise("beepboop", 1) { react(Emotion.EXCITED, "Beep boop. Initiating maximum cuteness.", 3000) },
+            Surprise("selfhighfive", 2) { react(Emotion.HAPPY, "High five, me!", 2500); perform(Move.WIGGLE) },
+            Surprise("sky", 3) { react(Emotion.THINKING, "Why is the sky blue? Hmm. I should ask Google.", 3500) },
+            Surprise("toot", 3) {
+                script {
+                    react(Emotion.SURPRISED, "Oops!", 1200); perform(Move.HOP); delay(1300)
+                    react(Emotion.SHY, "That wasn't me. That was the motor.", 3000)
+                }
+            },
+            Surprise("tailchase", 2) {
+                script {
+                    react(Emotion.EXCITED, "I'm going to catch my tail!", 2000); perform(Move.SPIN); delay(3000)
+                    react(Emotion.DIZZY, "Almost had it.", 2500)
+                }
+            },
+            Surprise("hum", 1) { singSong(Songs.all.random().take(7)) },
+        )
+    }
+
+    private fun hiccups() = script {
+        repeat(3) {
+            setEmotion(Emotion.SURPRISED, 600); speak("Hic!", Emotion.SURPRISED); perform(Move.HOP); delay(1400)
+        }
+        react(Emotion.SHY, "Sorry. Hiccups.")
+    }
+
+    /** Runs a little sequence without blocking the brain loop. */
+    private fun script(block: suspend () -> Unit) {
+        scope.launch { block() }
+    }
+
+    private fun playSurprise(): Boolean {
+        val cal = Calendar.getInstance()
+        val today = cal.get(Calendar.YEAR) * 1000 + cal.get(Calendar.DAY_OF_YEAR)
+        val ready = surprises.filter { today - prefs.getInt("surprise_${it.id}", 0) >= 3 }
+        if (ready.isEmpty()) return false
+        // Common ones (rarity 1) are 3x more likely than rare ones (rarity 3).
+        val pool = ready.flatMap { s -> List(4 - s.rarity) { s } }
+        val s = pool.random()
+        prefs.putInt("surprise_${s.id}", today)
+        s.run()
+        return true
     }
 
     private fun playDead() {
@@ -532,7 +813,7 @@ class Brain(
         perform(Move.WIGGLE)
     }
 
-    private fun react(e: Emotion, text: String, holdMs: Long = 4000) {
+    fun react(e: Emotion, text: String, holdMs: Long = 4000) {
         setEmotion(e, holdMs)
         speak(text, e)
     }
@@ -566,9 +847,23 @@ class Brain(
             }
         }
 
-        watchPeople(now)
+        // Needs update once a second, saved once a minute
+        if (now - lastNeedsTick >= 1000) {
+            val sleeping = asleep || emotion.value == Emotion.SLEEPY
+            needs.tick((now - lastNeedsTick).coerceAtMost(5000) / 1000f, faceFresh(), sleeping, isDriving)
+            lastNeedsTick = now
+            if (now - lastNeedsSave > 60_000) { needs.save(); lastNeedsSave = now }
+            checkNeeds(now)
+        }
+
+        val inGame = ::games.isInitialized && games.active != null
+        if (!inGame) watchPeople(now)
 
         if (moveJob?.isActive == true) return
+        if (inGame) {
+            drive(0, 0)
+            return
+        }
 
         val sleepy = asleep || dead || emotion.value == Emotion.SLEEPY
         if (paused || sleepy || lifted) {
@@ -603,7 +898,11 @@ class Brain(
     private fun idleLife(now: Long) {
         if (now < nextIdleAt) return
         nextIdleAt = now + Random.nextLong(7_000, 18_000)
-        val bored = emotion.value == Emotion.BORED
+        // About 1 in 12 idle moments is a rare surprise
+        if (Random.nextInt(12) == 0 && playSurprise()) return
+        val bored = emotion.value == Emotion.BORED || needs.fun_ < 30f
+        // A young robot is quiet; it gets chattier the more you play with it
+        val talk = Random.nextFloat() < needs.chattiness
         when (Random.nextInt(100)) {
             in 0..39 -> { // look around with the eyes only
                 idleLookUntil = now + 1800
@@ -614,23 +913,52 @@ class Brain(
                 idleLookUntil = now + 1000
                 perform(if (Random.nextBoolean()) Move.PEEK_LEFT else Move.PEEK_RIGHT)
             }
-            in 65..79 -> if (bored) { // yawn
+            in 65..79 -> if (bored && talk) { // yawn
                 setEmotion(Emotion.SLEEPY, 1800)
                 speak("Hmmm, aaah.", Emotion.SLEEPY)
             }
-            in 80..89 -> { // sneeze
+            in 80..89 -> if (talk) { // sneeze
                 setEmotion(Emotion.SURPRISED, 1200)
                 speak("Achoo!", Emotion.SURPRISED)
                 perform(Move.HOP)
             }
-            in 90..94 -> if (bored) { // asks for attention
+            in 90..94 -> if (bored || needs.social < 30f) { // asks for attention
                 setEmotion(Emotion.SAD, 2500)
                 speak(listOf("Play with me!", "I'm bored.", "Anybody there?").random(), Emotion.SAD)
                 perform(Move.HOP)
             }
-            else -> if (bored) { // hum
+            else -> if (bored && talk) { // hum
                 setEmotion(Emotion.HAPPY, 2000)
                 speak("La la la.", Emotion.HAPPY)
+            }
+        }
+    }
+
+    /** What its needs make it do on its own. */
+    private fun checkNeeds(now: Long) {
+        if (dead || lifted || paused) return
+        if (::games.isInitialized && games.active != null) return
+        // Wake up rested
+        if (asleep && needs.energy >= 95f && faceFresh()) {
+            wake(); return
+        }
+        if (asleep || now < emotionLockedUntil || moveJob?.isActive == true) return
+        if (now - lastNeedNag < 4 * 60_000) return
+        when {
+            needs.energy < 20f -> {
+                lastNeedNag = now
+                asleep = true
+                follow.value = false
+                react(Emotion.SLEEPY, "I'm so tired. Nap time. Pat me to wake me up.", 60 * 60_000)
+            }
+            needs.fun_ < 25f && faceFresh() -> {
+                lastNeedNag = now
+                react(Emotion.BORED, "I'm bored. Let's play a game! Say hey vinbot, rock paper scissors.", 4000)
+                perform(Move.HOP)
+            }
+            needs.social < 20f && faceFresh() -> {
+                lastNeedNag = now
+                react(Emotion.SAD, "I've been lonely. Can you play with me for a bit?", 4000)
             }
         }
     }

@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -50,12 +51,15 @@ fun RobotFace(
     listening: Boolean,
     speaking: Boolean,
     modifier: Modifier = Modifier,
+    noBlink: Boolean = false,
 ) {
+    val holdEyes by rememberUpdatedState(noBlink)
     // ---------------------------------------------------------------- blink + wink
     var blink by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(Random.nextLong(2500, 6000))
+            if (holdEyes) continue
             blink = true
             delay(120)
             blink = false

@@ -53,6 +53,19 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("wakeRequired", true)
         set(v) = sp.edit().putBoolean("wakeRequired", v).apply()
 
+    /** Your birthday as MM-dd, e.g. 03-15. Empty = unknown. */
+    var birthday: String
+        get() = sp.getString("birthday", "") ?: ""
+        set(v) = sp.edit().putString("birthday", v.trim()).apply()
+
+    // ---------------------------------------------------------------- memory that grows
+    fun getInt(key: String, def: Int) = sp.getInt(key, def)
+    fun putInt(key: String, v: Int) = sp.edit().putInt(key, v).apply()
+    fun getFloat(key: String, def: Float) = sp.getFloat(key, def)
+    fun putFloat(key: String, v: Float) = sp.edit().putFloat(key, v).apply()
+    fun getString(key: String, def: String) = sp.getString(key, def) ?: def
+    fun putString(key: String, v: String) = sp.edit().putString(key, v).apply()
+
     var showStatus: Boolean
         get() = sp.getBoolean("showStatus", true)
         set(v) = sp.edit().putBoolean("showStatus", v).apply()
