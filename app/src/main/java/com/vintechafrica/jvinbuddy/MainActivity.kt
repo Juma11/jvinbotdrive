@@ -309,6 +309,7 @@ class MainActivity : ComponentActivity() {
         val battery by link.battery.collectAsState()
         val manual by link.manual.collectAsState()
         val earsStatus by ears.status.collectAsState()
+        val brainError by ai.lastError.collectAsState()
         var showSettings by remember { mutableStateOf(false) }
         var fps by remember { mutableFloatStateOf(0f) }
         var online by remember { mutableStateOf(false) }
@@ -356,6 +357,14 @@ class MainActivity : ComponentActivity() {
                     add("speed ${prefs.speedPercent}%")
                     add("follow ${if (follow) "on" else "off"}")
                     add(emotion.name.lowercase())
+                }
+                if (brainError.isNotBlank()) {
+                    Text(
+                        text = brainError,
+                        color = Color(0xCCFF8A80),
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                    )
                 }
                 Text(
                     text = parts.joinToString(" | "),
