@@ -3,4 +3,5 @@ build/
 local.properties
 .idea/
 *.iml
-.DS_Store
+.wrangler/
+node_modules/
