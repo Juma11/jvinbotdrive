@@ -62,8 +62,8 @@ Check the provider's current free limits for search grounding before you leave i
 2. GitHub > Actions > Build APK > download `jvinbuddy-debug-apk`.
 3. Install on the Spark 4. Allow camera, microphone and location. Android 10 needs location for the first Bluetooth scan only.
 4. Turn on Bluetooth and Location for the first run. After the body pairs, location can go off.
-5. Long press the face > settings > paste a **Gemini API key** (free from aistudio.google.com). That is all the brain needs. The Worker is optional.
-6. Google app > Settings > Voice > Offline speech recognition > download English. Needed only for questions while offline. Commands are always offline.
+5. Long press the face > settings > paste a **Groq API key** (free from console.groq.com, no card). That is all the brain needs. A Gemini key is the backup. The Worker is optional.
+6. No Google speech app needed any more. VinBot uses its own microphone: commands are understood offline, questions go to Groq Whisper (or Gemini) as audio.
 7. Tecno battery saver kills background apps and dims the screen. Phone Master > Battery > App launch / power saving: set JVin Buddy to **manual, all allowed**. Settings > Display: sleep timeout to the maximum as a backup.
 
 Fixed download link for the newest build (after the first push with this workflow):
@@ -228,3 +228,13 @@ To add a command: add the phrase to `Commands.kt`, then handle it in `Brain.hand
 | Dizzy | After spin or dance | Spiral eyes, stars |
 | Love | Rock hand sign | Heart eyes, floating hearts |
 | Dead | "bang", "shoot", "play dead" | Falls back, X eyes, revives |
+
+## How it hears (v9)
+
+1. The offline ears listen only for the wake word, "stop", and the command list. Low-confidence matches are ignored, so noise does not wake it.
+2. After "hey vinbot" (or a double tap) it records your sentence until you stop talking (max 7 s). Red bars show it is recording.
+3. Offline it checks the recording for a command first ("dance", "sit"...). That is instant and free.
+4. Anything else goes online: Groq Whisper writes down what you said, then the AI answers. The bottom right shows `heard: "..."` so you can see how well it heard you.
+5. A clap or sudden loud sound makes it look around: "You called?"
+
+Quota guard: at most 3 AI requests per question, 2 s between questions, 300 per day.

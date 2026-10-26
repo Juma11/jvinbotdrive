@@ -19,6 +19,11 @@ class Prefs(context: Context) {
         get() = sp.getString("token", "") ?: ""
         set(v) = sp.edit().putString("token", v.trim()).apply()
 
+    /** Groq API key from console.groq.com (free). Stored only on this phone. */
+    var groqKey: String
+        get() = sp.getString("groqKey", "") ?: ""
+        set(v) = sp.edit().putString("groqKey", v.trim()).apply()
+
     /** Gemini API key from aistudio.google.com. Stored only on this phone. */
     var geminiKey: String
         get() = sp.getString("geminiKey", "") ?: ""

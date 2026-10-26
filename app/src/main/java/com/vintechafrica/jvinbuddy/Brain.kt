@@ -317,6 +317,22 @@ class Brain(
         }
     }
 
+    /** A sudden loud sound, like a clap or someone calling. */
+    fun onClap() {
+        if (dead || lifted || paused) return
+        if (::games.isInitialized && games.active != null) return
+        if (asleep) { wake(); return }
+        if (moveJob?.isActive == true || SystemClock.elapsedRealtime() < emotionLockedUntil) return
+        setEmotion(Emotion.SURPRISED, 1200)
+        script {
+            delay(1200)
+            setEmotion(Emotion.CURIOUS, 2500)
+            idleLookUntil = SystemClock.elapsedRealtime() + 2000
+            lookX.value = -0.7f; delay(600); lookX.value = 0.7f; delay(600); lookX.value = 0f
+            if (Random.nextFloat() < needs.chattiness) speak(listOf("You called?", "Huh? What was that?", "I heard that!").random(), Emotion.CURIOUS)
+        }
+    }
+
     /** Phone shaken hard several times. */
     fun onShaken() {
         if (asleep || dead) return

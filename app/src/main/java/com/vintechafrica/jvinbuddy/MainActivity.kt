@@ -53,6 +53,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /**
  * JVin Buddy.
@@ -76,6 +78,8 @@ class MainActivity : ComponentActivity() {
 
     /** After a wake word with no internet: offline commands accepted until this time. */
     private var armedUntil = 0L
+    /** What it heard last, shown at the bottom so you can see how well it hears. */
+    private val lastHeard = kotlinx.coroutines.flow.MutableStateFlow("")
 
     private var cameraStarted = false
     private var offlineHintGiven = false
@@ -108,7 +112,13 @@ class MainActivity : ComponentActivity() {
             },
             onListenError = ::onListenError,
         )
-        ears = Ears(this, onPhrase = ::onPhrase, onUrgentStop = { brain.urgentStop() })
+        ears = Ears(
+            this,
+            onPhrase = ::onPhrase,
+            onUrgentStop = { brain.urgentStop() },
+            onCaptured = ::onCaptured,
+            onClap = { brain.onClap() },
+        )
         brain = Brain(
             link, prefs, lifecycleScope,
             speak = { text, emotion -> voice.say(text, emotion) },
@@ -136,8 +146,16 @@ class MainActivity : ComponentActivity() {
 
         brain.start()
         lifecycleScope.launch { link.battery.collect { brain.onBattery(it) } }
-        // Do not hear our own voice.
-        lifecycleScope.launch { voice.speaking.collect { ears.setPause(it) } }
+        // Do not hear our own voice (plus a short tail so the echo dies out).
+        lifecycleScope.launch {
+            voice.speaking.collect { talking ->
+                if (talking) ears.setPause(true)
+                else {
+                    delay(700)
+                    if (!voice.speaking.value) ears.setPause(false)
+                }
+            }
+        }
 
         val missing = permissions.filter { !granted(it) }
         if (missing.isEmpty()) startWhatWeCan() else permLauncher.launch(missing.toTypedArray())
@@ -204,17 +222,7 @@ class MainActivity : ComponentActivity() {
     private fun onPhrase(text: String) {
         val now = android.os.SystemClock.elapsedRealtime()
         when {
-            Commands.isWake(text) -> {
-                // Online: Google hears the full sentence (command or question).
-                // Offline: the offline ears take one command for the next 7 s.
-                if (Net.online(this)) {
-                    askQuestion()
-                } else {
-                    armedUntil = now + 7000
-                    brain.listeningForQuestion()
-                    voice.say("Yes?", Emotion.CURIOUS)
-                }
-            }
+            Commands.isWake(text) -> askQuestion()
             !prefs.wakeRequired || Commands.isAlways(text) || now < armedUntil -> {
                 if (brain.handleCommand(text)) armedUntil = 0L
             }
@@ -222,23 +230,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Hand the mic to Google speech for one free question. */
+    /** Wake word or double tap: record the next sentence with our own mic. No Google, no beeps. */
     private fun askQuestion() {
-        if (!voice.available) {
-            voice.say("I can't understand questions. Install or update the Google app.", Emotion.SAD)
-            return
-        }
-        ears.stop()
         brain.paused = true
         brain.listeningForQuestion()
         link.stop()
+        ears.capture()
+    }
+
+    /** The recorded sentence. Commands are checked offline first; the rest goes to the AI. */
+    private fun onCaptured(pcm: ByteArray) {
+        if (pcm.isEmpty()) {
+            brain.paused = false
+            brain.setEmotion(Emotion.NEUTRAL, 0)
+            return
+        }
         lifecycleScope.launch {
-            delay(300) // let the offline ears release the microphone
-            voice.listen(preferOffline = !Net.online(this@MainActivity))
+            // 1. Offline guess: instant, and enough for commands like "dance" or "sit"
+            val local = withContext(Dispatchers.Default) { ears.transcribe(pcm) }
+            if (local.isNotBlank() && brain.handleCommand(local)) {
+                brain.paused = false
+                return@launch
+            }
+            // 2. Online ears hear full sentences and accents much better
+            val heard = if (Net.online(this@MainActivity)) {
+                brain.thinking()
+                ai.transcribe(pcm) ?: local
+            } else local
+            brain.paused = false
+            if (heard.isBlank()) {
+                brain.react(Emotion.CURIOUS, "Sorry, I didn't catch that.", 2500)
+                return@launch
+            }
+            onHeard(heard)
         }
     }
 
     private fun onHeard(text: String) {
+        lastHeard.value = text
         // 0. "sing about the rain": the AI writes an original song, the robot sings it.
         val topic = Regex("^sing (?:a song |me a song )?(?:about|for) (.+)").find(Commands.normalize(text))?.groupValues?.get(1)
         if (topic != null && Net.online(this) && ai.mode != "none") {
@@ -312,7 +341,8 @@ class MainActivity : ComponentActivity() {
         val lookY by brain.lookY.collectAsState()
         val winkAt by brain.winkAt.collectAsState()
         val follow by brain.follow.collectAsState()
-        val listening by voice.listening.collectAsState()
+        val listening by ears.capturing.collectAsState()
+        val heardText by lastHeard.collectAsState()
         val speaking by voice.speaking.collectAsState()
         val linkStatus by link.status.collectAsState()
         val battery by link.battery.collectAsState()
@@ -385,6 +415,14 @@ class MainActivity : ComponentActivity() {
                     add("follow ${if (follow) "on" else "off"}")
                     add(emotion.name.lowercase())
                 }
+                if (heardText.isNotBlank()) {
+                    Text(
+                        text = "heard: \"$heardText\"",
+                        color = Color(0x99B2EBF2),
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                    )
+                }
                 if (brainError.isNotBlank()) {
                     Text(
                         text = brainError,
@@ -418,6 +456,7 @@ class MainActivity : ComponentActivity() {
         var url by remember { mutableStateOf(prefs.workerUrl) }
         var token by remember { mutableStateOf(prefs.token) }
         var key by remember { mutableStateOf(prefs.geminiKey) }
+        var groq by remember { mutableStateOf(prefs.groqKey) }
         var low by remember { mutableStateOf(prefs.lowBattery.toString()) }
         var invert by remember { mutableStateOf(prefs.invertSteer) }
         var status by remember { mutableStateOf(prefs.showStatus) }
@@ -436,7 +475,10 @@ class MainActivity : ComponentActivity() {
                     Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedTextField(key, { key = it }, label = { Text("Gemini API key (easiest)") },
+                    OutlinedTextField(groq, { groq = it }, label = { Text("Groq API key (free, recommended)") },
+                        singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(key, { key = it }, label = { Text("Gemini API key (backup)") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth())
                     Text("Or use your Cloudflare Worker instead:", fontSize = 12.sp)
@@ -479,6 +521,7 @@ class MainActivity : ComponentActivity() {
                     prefs.workerUrl = url
                     prefs.token = token
                     prefs.geminiKey = key
+                    prefs.groqKey = groq
                     low.toFloatOrNull()?.let { prefs.lowBattery = it }
                     prefs.invertSteer = invert
                     prefs.showStatus = status
