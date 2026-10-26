@@ -6,3 +6,4 @@ local.properties
 .wrangler/
 node_modules/
 app/src/main/assets/model-en-us/
+app/src/main/assets/gesture_recognizer.task

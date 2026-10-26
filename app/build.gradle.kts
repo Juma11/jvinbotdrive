@@ -41,6 +41,10 @@ android {
     buildFeatures {
         compose = true
     }
+    // MediaPipe reads its model straight from the APK; keep it uncompressed.
+    androidResources {
+        noCompress += "task"
+    }
 }
 
 dependencies {
@@ -66,4 +70,7 @@ dependencies {
     // Offline always-on ears. The model is downloaded by the GitHub workflow into assets.
     implementation("net.java.dev.jna:jna:5.13.0@aar")
     implementation("com.alphacephei:vosk-android:0.3.47@aar")
+
+    // Offline hand gestures. The model is downloaded by the GitHub workflow into assets.
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
 }

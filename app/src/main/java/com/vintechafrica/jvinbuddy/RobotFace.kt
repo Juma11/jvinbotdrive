@@ -80,6 +80,19 @@ fun RobotFace(
                 drawLine(color, Offset(cx - r, eyeY + r), Offset(cx + r, eyeY - r), xStroke, StrokeCap.Round)
                 continue
             }
+            if (emotion == Emotion.LOVE) {
+                val r = eyeW * 0.26f
+                drawCircle(color, r, Offset(cx - r * 0.95f, eyeY - r * 0.4f))
+                drawCircle(color, r, Offset(cx + r * 0.95f, eyeY - r * 0.4f))
+                val heart = Path().apply {
+                    moveTo(cx - r * 1.93f, eyeY - r * 0.15f)
+                    lineTo(cx + r * 1.93f, eyeY - r * 0.15f)
+                    lineTo(cx, eyeY + r * 2.0f)
+                    close()
+                }
+                drawPath(heart, color)
+                continue
+            }
             drawRoundRect(
                 color = color,
                 topLeft = Offset(cx - eyeW / 2f, eyeY - eh / 2f),

@@ -25,12 +25,21 @@ jobs:
       # Offline speech model (about 40 MB) for the always-on ears.
       - name: Download offline speech model
         run: |
-          curl -sSL -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          curl -fsSL -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
           unzip -q model.zip
           mkdir -p app/src/main/assets
           rm -rf app/src/main/assets/model-en-us
           mv vosk-model-small-en-us-0.15 app/src/main/assets/model-en-us
           echo "small-en-us-0.15" > app/src/main/assets/model-en-us/uuid
+
+      # Hand gesture model (about 8 MB).
+      - name: Download hand gesture model
+        run: |
+          curl -fsSL -o app/src/main/assets/gesture_recognizer.task \
+            https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task \
+          || curl -fsSL -o app/src/main/assets/gesture_recognizer.task \
+            https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task
+          ls -l app/src/main/assets/gesture_recognizer.task
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace

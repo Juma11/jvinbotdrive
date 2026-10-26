@@ -99,6 +99,28 @@ No button pressing. The robot always listens for commands, fully offline.
 - **Talk to it:** say **"hey buddy"**, wait for the curious face and red dot, then ask anything.
 - **Tap face:** pet it. **Double tap:** ask a question. **Long press:** settings.
 
+**Hand signs (offline, no talking needed)**
+
+Stand 0.5 to 2 m in front of the phone, in good light, palm toward the camera. Hold a sign for half a second.
+
+| Sign | It does |
+|---|---|
+| Finger gun (index out, thumb up) | Plays dead: X eyes, falls back, revives after 5 s |
+| Wave (open palm side to side) | "Hi!" and wiggle |
+| Open palm held still (1 s) | Stops, like telling a dog to stay |
+| Thumbs up | Happy "Thanks!" |
+| Thumbs down | Sad, looks away |
+| Peace sign | Dances |
+| Index finger up | Spins |
+| Fist | "Fist bump!" hop |
+| Rock sign (thumb, index, pinky) | Heart eyes, "I love you too!" |
+| Point left or right | Turns that way |
+
+The same sign fires once. Drop your hand or change the sign to trigger it again.
+If pointing turns the wrong way, the face-follow steering is also wrong: fix both with **Invert steering**.
+
+**Speed:** long press > Motor speed (default 55%). Tricks run longer at low speed so turns keep their size. If 25% is still too fast, lower `MIN_PWM` in the firmware (motors may stall below about 70).
+
 **Commands (always on, offline)**
 
 | Say | It does |

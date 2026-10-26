@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,6 +58,7 @@ import kotlinx.coroutines.launch
  * JVin Buddy.
  *  - Always listening (offline) for dog commands: "come here", "bang", "go round"...
  *  - Say "hey buddy", then ask anything (needs internet).
+ *  - Hand signs (offline): finger gun, wave, stop palm, thumbs, peace, point, fist, love.
  *  - Tap the face = pet it. Double tap = ask a question. Long press = settings.
  */
 class MainActivity : ComponentActivity() {
@@ -68,6 +71,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var senses: Senses
     private lateinit var ai: AiClient
     private lateinit var ears: Ears
+    private var hands: HandGestures? = null
 
     private var cameraStarted = false
     private var offlineHintGiven = false
@@ -103,7 +107,12 @@ class MainActivity : ComponentActivity() {
         ears = Ears(this, onPhrase = ::onPhrase, onUrgentStop = { brain.urgentStop() })
         brain = Brain(link, prefs, lifecycleScope) { text, emotion -> voice.say(text, emotion) }
         ai = AiClient(prefs)
-        tracker = FaceTracker { brain.onFace(it) }
+        hands = try {
+            HandGestures(this, prefs) { sign -> runOnUiThread { brain.onGesture(sign) } }
+        } catch (e: Throwable) {
+            null
+        }
+        tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands)
         senses = Senses(this) { brain.onBump() }
 
         brain.start()
@@ -157,6 +166,7 @@ class MainActivity : ComponentActivity() {
         voice.shutdown()
         ears.shutdown()
         tracker.shutdown()
+        hands?.shutdown()
         super.onDestroy()
     }
 
@@ -284,7 +294,15 @@ class MainActivity : ComponentActivity() {
                     add(if (online) "online" else "offline")
                     add(earsStatus)
                     add("brain ${ai.mode}")
-                    add("face %.1f fps".format(fps))
+                    add("eyes %.1f fps".format(fps))
+                    add(
+                        when {
+                            hands?.loaded != true -> "hands off (no model)"
+                            prefs.gestures -> "hands on"
+                            else -> "hands off"
+                        }
+                    )
+                    add("speed ${prefs.speedPercent}%")
                     add("follow ${if (follow) "on" else "off"}")
                     add(emotion.name.lowercase())
                 }
@@ -316,6 +334,8 @@ class MainActivity : ComponentActivity() {
         var low by remember { mutableStateOf(prefs.lowBattery.toString()) }
         var invert by remember { mutableStateOf(prefs.invertSteer) }
         var status by remember { mutableStateOf(prefs.showStatus) }
+        var speed by remember { mutableIntStateOf(prefs.speedPercent) }
+        var gestures by remember { mutableStateOf(prefs.gestures) }
         var forget by remember { mutableStateOf(false) }
         val paired = prefs.robotAddress.ifBlank { "none yet" }
 
@@ -339,6 +359,15 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(low, { low = it }, label = { Text("Low battery volts") },
                         singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth())
+                    Text("Motor speed: $speed%")
+                    Slider(
+                        value = speed.toFloat(),
+                        onValueChange = { speed = it.toInt() },
+                        valueRange = 25f..100f,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(gestures, { gestures = it }); Text("  Hand gesture tricks")
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(invert, { invert = it }); Text("  Invert steering")
                     }
@@ -359,6 +388,8 @@ class MainActivity : ComponentActivity() {
                     low.toFloatOrNull()?.let { prefs.lowBattery = it }
                     prefs.invertSteer = invert
                     prefs.showStatus = status
+                    prefs.speedPercent = speed
+                    prefs.gestures = gestures
                     if (forget) prefs.robotAddress = ""
                     onSaved()
                 }) { Text("Save") }

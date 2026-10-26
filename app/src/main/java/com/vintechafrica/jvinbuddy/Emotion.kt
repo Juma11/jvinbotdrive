@@ -22,7 +22,8 @@ enum class Emotion(
     SAD(0.6f, -0.9f, 0.6f, false, 0xFF64B5F6, 0.9f, 0.85f),
     TIRED(0.4f, -0.4f, 0.2f, false, 0xFFFF8A65, 0.85f, 0.8f),
     THINKING(0.7f, 0f, 0.3f, false, 0xFFBA68C8, 1.1f, 1.0f),
-    DEAD(1.0f, -0.3f, 0f, false, 0xFFE57373, 0.75f, 0.8f); // X eyes, drawn in RobotFace
+    DEAD(1.0f, -0.3f, 0f, false, 0xFFE57373, 0.75f, 0.8f), // X eyes, drawn in RobotFace
+    LOVE(1.0f, 1.0f, 0f, false, 0xFFFF6FA8, 1.4f, 1.0f); // heart eyes, drawn in RobotFace
 
     companion object {
         fun parse(s: String?): Emotion =

@@ -38,6 +38,16 @@ class Prefs(context: Context) {
         get() = sp.getFloat("lowBattery", 6.6f)
         set(v) = sp.edit().putFloat("lowBattery", v).apply()
 
+    /** Motor speed, 25..100 %. Moves run longer at low speed so turns keep their size. */
+    var speedPercent: Int
+        get() = sp.getInt("speedPercent", 55)
+        set(v) = sp.edit().putInt("speedPercent", v.coerceIn(25, 100)).apply()
+
+    /** Hand gesture tricks. Turn off to save battery and CPU. */
+    var gestures: Boolean
+        get() = sp.getBoolean("gestures", true)
+        set(v) = sp.edit().putBoolean("gestures", v).apply()
+
     var showStatus: Boolean
         get() = sp.getBoolean("showStatus", true)
         set(v) = sp.edit().putBoolean("showStatus", v).apply()

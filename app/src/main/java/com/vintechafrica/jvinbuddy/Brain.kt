@@ -231,6 +231,51 @@ class Brain(
         }
     }
 
+    // ================================================================ hand signs
+    fun onGesture(sign: HandSign) {
+        if (sign == HandSign.GUN) {
+            playDead(); return
+        }
+        if (dead) revive()
+        if (asleep) {
+            wake(); return
+        }
+        when (sign) {
+            HandSign.WAVE -> {
+                react(Emotion.HAPPY, listOf("Hi!", "Hello!", "Hey there!").random()); perform(Move.WIGGLE)
+            }
+            HandSign.PALM_STOP -> {
+                urgentStop(); react(Emotion.NEUTRAL, "Okay, stopping.")
+            }
+            HandSign.THUMB_UP -> {
+                react(Emotion.HAPPY, listOf("Thanks!", "Yay!", "Cool!").random()); perform(Move.WIGGLE_SMALL)
+            }
+            HandSign.THUMB_DOWN -> {
+                react(Emotion.SAD, "Aww."); perform(Move.TURN_AWAY_SMALL)
+            }
+            HandSign.PEACE -> {
+                react(Emotion.HAPPY, "Dance time!"); perform(Move.DANCE)
+            }
+            HandSign.POINT_UP -> {
+                react(Emotion.HAPPY, "Wheee!"); perform(Move.SPIN)
+            }
+            HandSign.FIST -> {
+                react(Emotion.HAPPY, "Fist bump!"); perform(Move.HOP)
+            }
+            HandSign.LOVE -> {
+                react(Emotion.LOVE, "I love you too!", 4000); perform(Move.WIGGLE)
+            }
+            HandSign.POINT_LEFT, HandSign.POINT_RIGHT -> {
+                // Same side logic as following a face, so "invert steering" fixes both.
+                var side = if (sign == HandSign.POINT_RIGHT) 1f else -1f
+                if (prefs.invertSteer) side = -side
+                react(Emotion.CURIOUS, "That way?")
+                perform(if (side > 0) Move.TURN_LEFT else Move.TURN_RIGHT)
+            }
+            HandSign.GUN -> {}
+        }
+    }
+
     // ================================================================ tricks
     private fun playDead() {
         deadJob?.cancel()
@@ -356,9 +401,15 @@ class Brain(
     }
 
     // ================================================================ moves
+    private val speed: Float get() = prefs.speedPercent / 100f
+
+    /** All motor commands pass through here, scaled by the speed setting. */
     private fun drive(l: Int, r: Int) {
+        val s = speed
+        val sl = (l * s).toInt()
+        val sr = (r * s).toInt()
         lastDriveMag = maxOf(abs(l), abs(r))
-        link.setDrive(l, r)
+        link.setDrive(sl, sr)
     }
 
     private fun cancelMove() {
@@ -369,9 +420,11 @@ class Brain(
     fun perform(move: Move) {
         cancelMove()
         moveJob = scope.launch {
+            // Slower speed = longer step, so a half turn is still about a half turn.
+            val stretch = (1f / speed).coerceIn(1f, 2.5f)
             for (step in move.steps) {
                 drive(step.l, step.r)
-                delay(step.ms)
+                delay((step.ms * stretch).toLong())
             }
             drive(0, 0)
         }
