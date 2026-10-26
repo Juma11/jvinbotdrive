@@ -35,8 +35,23 @@ class Brain(
     /** Last time you gave a command, gesture or started a game. Wheels only move soon after one. */
     @Volatile private var lastCommandAt = 0L
 
+    // ---------------------------------------------------------------- story mode + recording
+    lateinit var story: Story
+    /** True while a story script runs: wheels allowed, no automatic reactions. */
+    @Volatile var showRunning = false
+    /** "photo" (your picture), "logo", or null. */
+    val overlayImage = MutableStateFlow<String?>(null)
+    private var recording = false
+    private var recordStart = 0L
+    private val recorded = mutableListOf<Pair<Long, String>>()
+
+    fun isMoving(): Boolean = moveJob?.isActive == true
+
+    /** A game or story is running: no automatic reactions. */
+    private fun inActivity(): Boolean = showRunning || (::games.isInitialized && games.active != null)
+
     private fun motorsAllowed(): Boolean =
-        prefs.autoMove || follow.value ||
+        prefs.autoMove || follow.value || showRunning ||
             SystemClock.elapsedRealtime() - lastCommandAt < 15_000 ||
             (::games.isInitialized && games.active != null)
 
@@ -130,7 +145,7 @@ class Brain(
                 lookY.value = info.y
             }
             if (asleep || dead || lifted) return
-            if (::games.isInitialized && games.active != null) return
+            if (inActivity()) return
 
             // Peekaboo: you hid behind your hands and came back
             if (peekHiddenAt > 0L && now - peekHiddenAt < 8000) {
@@ -225,6 +240,7 @@ class Brain(
 
     /** Called the instant "stop" is heard, before the sentence ends. */
     fun urgentStop() {
+        if (::story.isInitialized && story.running.value) story.stop()
         if (::dj.isInitialized && dj.isPlaying) dj.stopAll()
         cancelMove()
         drive(0, 0)
@@ -294,7 +310,7 @@ class Brain(
     /** Called every tick: notices you leaving and staring. */
     private fun watchPeople(now: Long) {
         if (asleep || dead || lifted || paused) return
-        if (::games.isInitialized && games.active != null) return
+        if (inActivity()) return
         val f = face
         // Face vanished right while a hand was in front of it: you're hiding (peekaboo)
         if (f == null && peekHiddenAt == 0L && now - lastFaceSeen in 500..1500 && now - handAt < 1200 &&
@@ -331,7 +347,7 @@ class Brain(
     /** A sudden loud sound, like a clap or someone calling. */
     fun onClap() {
         if (dead || lifted || paused) return
-        if (::games.isInitialized && games.active != null) return
+        if (inActivity()) return
         if (asleep) { wake(); return }
         if (moveJob?.isActive == true || SystemClock.elapsedRealtime() < emotionLockedUntil) return
         setEmotion(Emotion.SURPRISED, 1200)
@@ -379,9 +395,48 @@ class Brain(
     fun handleCommand(raw: String): Boolean {
         val t = Commands.normalize(raw)
         if (t.isEmpty()) return false
+        // Teach mode controls
+        when {
+            "start recording" in t || t == "record" -> {
+                recording = true; recorded.clear(); recordStart = SystemClock.elapsedRealtime()
+                react(Emotion.CURIOUS, "Recording. Give me commands, then say stop recording.", 3000)
+                return true
+            }
+            "stop recording" in t -> {
+                recording = false
+                prefs.putString("recorded_script", recordedScript())
+                react(Emotion.HAPPY, "Saved ${recorded.size} moves. Say play recording.", 3000)
+                return true
+            }
+            "play recording" in t || t == "replay" -> {
+                val script = prefs.getString("recorded_script", "")
+                if (script.isBlank()) react(Emotion.CURIOUS, "I have no recording yet. Say start recording first.")
+                else story.play(script)
+                return true
+            }
+            "tell your story" in t || "tell me your story" in t || "story time" in t || "your story" in t -> {
+                story.play(prefs.storyScript)
+                return true
+            }
+        }
         val handled = handleCommandInner(t)
-        if (handled) lastCommandAt = SystemClock.elapsedRealtime()
+        if (handled) {
+            lastCommandAt = SystemClock.elapsedRealtime()
+            if (recording) recorded += (SystemClock.elapsedRealtime() - recordStart) to t
+        }
         return handled
+    }
+
+    /** Recorded commands as a story script, with the pauses between them. */
+    private fun recordedScript(): String = buildString {
+        appendLine("# Recorded ${recorded.size} commands")
+        var last = 0L
+        for ((at, cmd) in recorded) {
+            val gap = (at - last) / 1000f
+            if (gap > 0.3f) appendLine(String.format(java.util.Locale.US, "wait %.1f", gap))
+            appendLine("do $cmd")
+            last = at
+        }
     }
 
     private fun handleCommandInner(t: String): Boolean {
@@ -557,7 +612,7 @@ class Brain(
     // ================================================================ hand signs
     fun onGesture(sign: HandSign) {
         lastCommandAt = SystemClock.elapsedRealtime()
-        if (::games.isInitialized && games.active != null) return
+        if (inActivity()) return
         needs.interacted(socialGain = 3f, funGain = 2f)
         if (sign == HandSign.GUN) {
             playDead(); return
@@ -918,7 +973,7 @@ class Brain(
             checkNeeds(now)
         }
 
-        val inGame = ::games.isInitialized && games.active != null
+        val inGame = inActivity()
         if (!inGame) watchPeople(now)
 
         if (moveJob?.isActive == true) return
@@ -999,7 +1054,7 @@ class Brain(
     /** What its needs make it do on its own. */
     private fun checkNeeds(now: Long) {
         if (dead || lifted || paused) return
-        if (::games.isInitialized && games.active != null) return
+        if (inActivity()) return
         // Wake up rested
         if (asleep && needs.energy >= 95f && faceFresh()) {
             wake(); return
@@ -1044,7 +1099,7 @@ class Brain(
 
     fun perform(move: Move) = performSteps(move.steps, move)
 
-    private fun performSteps(steps: List<Step>, move: Move? = null) {
+    fun performSteps(steps: List<Step>, move: Move? = null) {
         cancelMove()
         moveJob = scope.launch {
             // Slower speed = longer step, so a half turn is still about a half turn.

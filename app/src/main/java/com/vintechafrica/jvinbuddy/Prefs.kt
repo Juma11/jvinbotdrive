@@ -92,6 +92,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putFloat("brightness", v.coerceIn(0.1f, 1f)).apply()
 
     /** Always show the status line. Off: it shows for 30 s after start or settings, then hides (burn-in). */
+    /** Story mode script (see Story.kt for the step words). */
+    var storyScript: String
+        get() = sp.getString("storyScript", null) ?: Story.DEFAULT
+        set(v) = sp.edit().putString("storyScript", v).apply()
+
     var showStatus: Boolean
         get() = sp.getBoolean("showStatus2", false)
         set(v) = sp.edit().putBoolean("showStatus2", v).apply()

@@ -271,3 +271,30 @@ Quota guard: at most 3 AI requests per question, 2 s between questions, 300 per 
 While music plays, the mic hears the music, so only "stop" and "hey vinbot" work. Saying "hey vinbot" turns the music off so it can hear you.
 
 **Jamendo client ID:** free for non-commercial use at devportal.jamendo.com. Paste it in settings. Jamendo's terms require crediting the artist and Jamendo, which the screen does.
+
+## Story mode and teach mode (v11)
+
+**Story mode** performs a script so you can film it.
+- Settings > Story > **Pick my photo** (shown on "photo" steps with "Meet my creator: Vincent").
+- Edit the script in the box (one step per line), then **Play story (3 s)**. Start recording with your other phone during the countdown.
+- Or say "hey vinbot, tell your story".
+- "stop" or an open palm ends it.
+
+Script steps:
+
+```
+say HAPPY: Hello there!        speak with a face (any emotion name)
+photo: Meet Vincent.           your photo + optional line
+logo: Made by Vintech Africa.  Vintech logo + optional line
+caption: Nairobi, 2026         big text
+hide                           remove photo / logo / caption
+emotion LOVE 3                 face for 3 s
+sleep 2  /  wake               eyes closed 2 s / wake up
+move forward 1.5               slow forward 1.5 s (back, add "fast" for fast)
+turn left 0.6                  turn (right)
+do spin                        any command or move: spin, dance, play dead, celebrate, wiggle, hop, tremble...
+beat amapiano 8                background beat 8 s
+wait 2                         pause
+```
+
+**Teach mode:** say "start recording", give commands ("forward", "spin", "dance"...), say "stop recording". "play recording" repeats them with the same pauses. Settings > "Use my recording" turns it into a story script you can edit and add lines to.

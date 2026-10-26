@@ -87,6 +87,19 @@ class Dj(
         }
     }
 
+    /** Quiet beat under a story, no speech or dancing. Stops by itself after [ms]. */
+    fun backgroundBeat(style: Synth.Style, ms: Long) {
+        stopAll()
+        job = scope.launch {
+            val pcm = withContext(Dispatchers.Default) { Synth.toPcm(Synth.renderBeat(style, 4), 0.7f) }
+            track = Synth.play(pcm, loop = true).also { it.setVolume(0.6f) }
+            nowPlaying.value = "${style.spoken} beat"
+            delay(ms)
+            stopSound()
+            nowPlaying.value = null
+        }
+    }
+
     // ================================================================ karaoke songs
     fun sing(song: Song) {
         stopAll()

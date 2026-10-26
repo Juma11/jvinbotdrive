@@ -7,6 +7,18 @@ import android.os.Bundle
 import android.speech.SpeechRecognizer
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import android.graphics.BitmapFactory
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import java.io.File
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -94,6 +106,30 @@ class MainActivity : ComponentActivity() {
     private val permissions: Array<String> =
         arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO) + bluetoothPermissions
 
+    /** Your photo for story mode, copied into the app and shrunk. */
+    private val creatorPhoto: File get() = File(filesDir, "creator.jpg")
+    private val photoVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    private val pickPhoto = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                val bmp = BitmapFactory.decodeStream(input) ?: return@use
+                val scale = minOf(1f, 1024f / maxOf(bmp.width, bmp.height))
+                val small = android.graphics.Bitmap.createScaledBitmap(
+                    bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true,
+                )
+                creatorPhoto.outputStream().use { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+                photoVersion.value++
+                brain.react(Emotion.LOVE, "Got it! That's my creator.", 2500)
+            }
+        } catch (e: Exception) {
+            brain.react(Emotion.SAD, "I couldn't open that photo.")
+        }
+    }
+
+    private lateinit var story: Story
+
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { startWhatWeCan() }
 
@@ -137,6 +173,8 @@ class MainActivity : ComponentActivity() {
         tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands, needClassify = { brain.isStaring() })
         brain.games = Games(brain, hands, prefs, lifecycleScope)
         brain.dj = Dj(this, brain, voice, ai, prefs, lifecycleScope)
+        story = Story(brain, voice, lifecycleScope)
+        brain.story = story
         senses = Senses(
             this,
             onBump = { brain.onBump() },
@@ -447,6 +485,39 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.offset(x = shiftX.dp, y = shiftY.dp),
             )
 
+            // Story overlay: your photo or the Vintech logo
+            val overlayImage by brain.overlayImage.collectAsState()
+            val photoVer by photoVersion.collectAsState()
+            overlayImage?.let { which ->
+                Box(Modifier.fillMaxSize().background(Color(0xEE000000)), contentAlignment = Alignment.Center) {
+                    if (which == "logo") {
+                        Image(
+                            painter = painterResource(R.drawable.vintech_logo),
+                            contentDescription = "Vintech Africa",
+                            modifier = Modifier.fillMaxHeight(0.8f).aspectRatio(1f),
+                        )
+                    } else {
+                        val bmp = remember(photoVer) {
+                            if (creatorPhoto.exists()) BitmapFactory.decodeFile(creatorPhoto.path)?.asImageBitmap() else null
+                        }
+                        if (bmp != null) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Image(
+                                    bitmap = bmp,
+                                    contentDescription = "My creator",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxHeight(0.72f).aspectRatio(1f).clip(RoundedCornerShape(24.dp)),
+                                )
+                                Text("Meet my creator: Vincent", color = Color(0xFF4FC3F7), fontSize = 22.sp,
+                                    modifier = Modifier.padding(top = 10.dp))
+                            }
+                        } else {
+                            Text("Pick your photo in settings > Story", color = Color.White, fontSize = 20.sp)
+                        }
+                    }
+                }
+            }
+
             // Game overlay: hands, scores
             overlay?.let { text ->
                 Text(
@@ -550,11 +621,12 @@ class MainActivity : ComponentActivity() {
         var autoMove by remember { mutableStateOf(prefs.autoMove) }
         var birthday by remember { mutableStateOf(prefs.birthday) }
         var forget by remember { mutableStateOf(false) }
+        var script by remember { mutableStateOf(prefs.storyScript) }
         val paired = prefs.robotAddress.ifBlank { "none yet" }
 
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("JVin Buddy settings") },
+            title = { Text("VinBot settings") },
             text = {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()),
@@ -602,6 +674,31 @@ class MainActivity : ComponentActivity() {
                     }
                     Text("Screen brightness: ${(bright * 100).toInt()}%")
                     Slider(value = bright, onValueChange = { bright = it }, valueRange = 0.1f..1f)
+                    Text("Story mode", fontSize = 16.sp, color = Color(0xFF4FC3F7))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            prefs.storyScript = script
+                            onDismiss()
+                            story.play(script, countdown = true)
+                        }) { Text("Play story (3 s)") }
+                        Button(onClick = {
+                            pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) { Text("Pick my photo") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { script = Story.DEFAULT }) { Text("Reset story") }
+                        TextButton(onClick = {
+                            val rec = prefs.getString("recorded_script", "")
+                            if (rec.isNotBlank()) script = rec
+                        }) { Text("Use my recording") }
+                    }
+                    OutlinedTextField(
+                        script, { script = it },
+                        label = { Text("Story script (one step per line)") },
+                        minLines = 6, maxLines = 14,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Text("Paired body: $paired", fontSize = 12.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(forget, { forget = it }); Text("  Forget body and scan again")
@@ -625,6 +722,7 @@ class MainActivity : ComponentActivity() {
                     prefs.autoMove = autoMove
                     if (birthday.isBlank() || Regex("\\d{2}-\\d{2}").matches(birthday.trim())) prefs.birthday = birthday
                     if (forget) prefs.robotAddress = ""
+                    prefs.storyScript = script
                     onSaved()
                 }) { Text("Save") }
             },

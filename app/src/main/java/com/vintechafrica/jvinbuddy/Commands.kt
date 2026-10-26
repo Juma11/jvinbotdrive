@@ -45,6 +45,9 @@ object Commands {
         "next song", "skip", "stop music", "stop the music", "louder", "quieter",
         "make a beat", "drop a beat", "beatbox", "amapiano beat", "afrobeat beat", "hip hop beat",
         "house beat", "dancehall beat", "make a song", "make me a song", "rap", "rap for me",
+        // story and teach mode
+        "tell your story", "tell me your story", "story time", "start recording", "record",
+        "stop recording", "play recording", "replay",
         // emotions and tricks (Emo style)
         "be angry", "get angry", "angry", "be scared", "scared", "boo", "be happy", "smile",
         "be sad", "cry", "laugh", "say sorry", "i love you", "show me love", "give me a kiss",
