@@ -125,7 +125,13 @@ class MainActivity : ComponentActivity() {
             null
         }
         tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands)
-        senses = Senses(this) { brain.onBump() }
+        senses = Senses(
+            this,
+            onBump = { brain.onBump() },
+            onShake = { brain.onShaken() },
+            onLift = { up -> brain.onLifted(up) },
+            isDriving = { brain.isDriving },
+        )
 
         brain.start()
         lifecycleScope.launch { link.battery.collect { brain.onBattery(it) } }

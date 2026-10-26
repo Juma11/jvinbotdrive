@@ -35,7 +35,7 @@ object LocalReplies {
                 Emotion.HAPPY to "Vincent built me at Vintech Africa."
             has("how are you") -> Emotion.HAPPY to "I'm great. My wheels are ready to roll."
             has("what can you do") ->
-                Emotion.CURIOUS to if (online) "I can follow your face, do tricks, and answer questions."
+                Emotion.CURIOUS to if (online) "I can follow you, read your hand signs, do tricks, sing, and answer questions. Say hey vinbot first."
                 else "I'm offline, so I can follow your face, do tricks and tell the time. Questions need internet."
             has("are you online", "do you have internet") ->
                 if (online) Emotion.HAPPY to "Yes, I'm online." else Emotion.SAD to "No, I'm offline right now."

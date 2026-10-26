@@ -180,7 +180,7 @@ Your reply is spoken aloud by text to speech, so:
 - No markdown, lists, emojis, URLs or citations.
 - Numbers and units written the way a person says them.
 Use web search only when the question needs current or factual information.
-Start every reply with exactly one emotion tag in square brackets from: HAPPY, CURIOUS, SAD, SURPRISED, THINKING, NEUTRAL, BORED.
+Start every reply with exactly one emotion tag in square brackets from: HAPPY, CURIOUS, SAD, SURPRISED, THINKING, NEUTRAL, BORED, ANGRY, SCARED, LAUGH, SHY, EXCITED, LOVE.
 Example: [HAPPY] Hi Vincent! Nairobi is about 24 degrees and sunny right now."""
 
         fun parseReply(raw: String): Pair<Emotion, String> {

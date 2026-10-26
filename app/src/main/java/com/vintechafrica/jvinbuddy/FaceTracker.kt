@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
  * x: -1 .. 1, your left .. your right (camera image mirrored, like a mirror).
  * y: -1 (top) .. 1 (bottom). size: face width as a fraction of frame width.
  */
-data class FaceInfo(val x: Float, val y: Float, val size: Float)
+data class FaceInfo(val x: Float, val y: Float, val size: Float, val count: Int = 1)
 
 /**
  * The robot's eyes. Front camera at low resolution, tuned for the Tecno Spark 4.
@@ -118,6 +118,7 @@ class FaceTracker(
                 x = (1f - (it.boundingBox.exactCenterX() / width) * 2f).coerceIn(-1f, 1f),
                 y = ((it.boundingBox.exactCenterY() / height) * 2f - 1f).coerceIn(-1f, 1f),
                 size = it.boundingBox.width() / width,
+                count = faces.size,
             )
         }
         main.post { onFace(info) }

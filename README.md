@@ -103,6 +103,28 @@ No button pressing. Say **"hey vinbot"** first, then the command or question.
 
 "VinBot" is not an English word, so the offline ears match it to sound-alikes ("hey vin bot", "hey ben bot", "hey bin bot"...). Say it clearly as two parts: "hey VIN-BOT". "hey robot" also works.
 
+**Reacts to people (no commands needed)**
+
+| You do | It does |
+|---|---|
+| Come back after a while | Greets you by time of day ("Good morning Vincent!"), or "I missed you!" after 5 min |
+| Walk away after playing | "Where did you go?", sad face, looks around for you |
+| Stare at it for about 12 s | Gets shy, blushes, "Why are you staring at me?" |
+| Put your face very close | Scared face, "Too close!", backs off |
+| Bring a friend (2 faces) | "Ooh, who's your friend?" |
+| Tap the face | Wink and giggle (petting) |
+| Tap 3 times fast | Laughs, "That tickles!" |
+| Pick it up | Scared, "Put me down!", motors locked until it is back down |
+| Put it down | "Phew, solid ground." |
+| Shake it | Dizzy spiral eyes, "Stop shaking me!" |
+| Ignore it | Bored, then asks "Play with me!", then sleeps (faster after 10 pm) |
+
+**Emotion and trick commands (after "hey vinbot")**
+
+be angry, be scared, boo, be happy, smile, be sad, cry, laugh, say sorry, i love you, give me a kiss, celebrate, party, look around, do a trick (random trick).
+
+Face expressions: neutral, happy, curious, bored, sleepy, surprised, sad, tired, thinking, angry (red, slanted lids, steam), scared (trembling, sweat drop), laugh (bouncing grin), shy (blush, looks away), excited (star eyes, sparkles), crying (tear streams), love (heart eyes), dizzy (spirals), dead (X eyes), singing (notes). The AI can pick any of these for its answers.
+
 **Singing**
 
 | Say (after "hey vinbot") | It sings |

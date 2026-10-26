@@ -39,6 +39,10 @@ object Commands {
         // singing
         "sing", "sing a song", "sing for me", "sing happy birthday", "happy birthday",
         "sing twinkle twinkle", "twinkle twinkle",
+        // emotions and tricks (Emo style)
+        "be angry", "get angry", "angry", "be scared", "scared", "boo", "be happy", "smile",
+        "be sad", "cry", "laugh", "say sorry", "i love you", "show me love", "give me a kiss",
+        "celebrate", "party", "look around", "do a trick", "show me a trick", "trick",
         // dog stuff
         "speak", "bark", "shake", "high five", "say hello", "fetch",
         "good boy", "good girl", "good dog", "good robot", "well done", "good job",

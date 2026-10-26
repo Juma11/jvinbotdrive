@@ -1,6 +1,7 @@
 package com.vintechafrica.jvinbuddy
 
 import android.os.SystemClock
+import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -47,6 +48,20 @@ class Brain(
     private var idleLookUntil = 0L
     private var handAt = 0L
 
+    // ---------------------------------------------------------------- human behaviour memory
+    private var presentSince = 0L       // when the current visit started
+    private var leftReacted = true      // already reacted to you leaving
+    private var stareSince = 0L
+    private var lastStareReact = 0L
+    private var lastCloseReact = 0L
+    private var lastFriendReact = 0L
+    private var greetedPeriod = ""      // "morning", "evening"... greeted once each
+    private val taps = ArrayDeque<Long>()
+    private var lifted = false
+
+    /** True while the motors are being driven. Senses ignore jolts then. */
+    val isDriving: Boolean get() = lastDriveMag > 0
+
     // ---------------------------------------------------------------- tuning
     private val turnGain = 170f       // PWM per unit of face offset
     private val deadband = 0.12f      // ignore small offsets so it does not jitter
@@ -73,12 +88,15 @@ class Brain(
             face = info
             faceAt = now
             lastFaceSeen = now
+            if (gone > 3000) presentSince = now
+            leftReacted = false
             // Eyes follow a hand first (doctor finger test), then the face.
             if (now > idleLookUntil && now - handAt > 500) {
                 lookX.value = if (prefs.invertSteer) -info.x else info.x
                 lookY.value = info.y
             }
-            if (asleep || dead) return
+            if (asleep || dead || lifted) return
+            if (reactToFace(info, gone, now)) return
             if (gone > 10_000) {
                 setEmotion(Emotion.CURIOUS, 1200)
                 scope.launch {
@@ -122,11 +140,19 @@ class Brain(
         }
     }
 
-    /** Tap on the face = petting. */
+    /** Tap on the face = petting. Three quick taps = tickling. */
     fun pet() {
+        val now = SystemClock.elapsedRealtime()
+        taps.addLast(now)
+        while (taps.isNotEmpty() && now - taps.first() > 1200) taps.removeFirst()
         when {
             asleep -> wake()
             dead -> revive()
+            taps.size >= 3 -> {
+                taps.clear()
+                react(Emotion.LAUGH, listOf("Hahaha! That tickles!", "Hehehe, stop it!", "Hahaha!").random(), 3000)
+                perform(Move.WIGGLE)
+            }
             else -> {
                 setEmotion(Emotion.HAPPY, 3000)
                 winkAt.value = SystemClock.elapsedRealtime()
@@ -147,6 +173,107 @@ class Brain(
         cancelMove()
         drive(0, 0)
         setEmotion(Emotion.CURIOUS, 8000)
+    }
+
+    // ================================================================ human behaviour
+    /**
+     * Reactions to what people do in front of it. Returns true if it reacted,
+     * so the normal "hello again" greeting is skipped.
+     */
+    private fun reactToFace(f: FaceInfo, gone: Long, now: Long): Boolean {
+        val busy = moveJob?.isActive == true || now < emotionLockedUntil
+        // Someone right in its face
+        if (f.size > 0.45f && now - lastCloseReact > 15_000 && !busy) {
+            lastCloseReact = now
+            react(Emotion.SCARED, listOf("Whoa, too close!", "Personal space please!", "Eek, big face!").random(), 2500)
+            perform(Move.BACK_OFF)
+            return true
+        }
+        // A second person appears
+        if (f.count >= 2 && now - lastFriendReact > 60_000 && !busy) {
+            lastFriendReact = now
+            react(Emotion.CURIOUS, listOf("Ooh, who's your friend?", "Two humans! Hello!", "A new friend!").random(), 3000)
+            perform(Move.WIGGLE_SMALL)
+            return true
+        }
+        // Coming back after a while: greet by time of day, once per period
+        if (gone > 60_000) {
+            val period = dayPeriod()
+            if (period != greetedPeriod) {
+                greetedPeriod = period
+                val line = when (period) {
+                    "morning" -> "Good morning Vincent!"
+                    "afternoon" -> "Good afternoon!"
+                    "evening" -> "Good evening! How was your day?"
+                    else -> "It's late. You should sleep soon."
+                }
+                react(if (period == "night") Emotion.TIRED else Emotion.EXCITED, line, 3500)
+                perform(if (period == "night") Move.WIGGLE_SMALL else Move.CELEBRATE)
+                return true
+            }
+            if (gone > 5 * 60_000) {
+                react(Emotion.EXCITED, listOf("You're back!", "Yay, you're here!", "I missed you!").random(), 3000)
+                perform(Move.CELEBRATE)
+                return true
+            }
+        }
+        return false
+    }
+
+    /** Called every tick: notices you leaving and staring. */
+    private fun watchPeople(now: Long) {
+        if (asleep || dead || lifted || paused) return
+        val f = face
+        // You walked away after spending time with it
+        if (f == null && !leftReacted && presentSince > 0 &&
+            lastFaceSeen - presentSince > 5000 && now - lastFaceSeen in 3000..6000
+        ) {
+            leftReacted = true
+            react(Emotion.SAD, listOf("Where did you go?", "Hello? Come back!", "Aww, don't leave.").random(), 3500)
+            if (follow.value) perform(Move.SEARCH)
+            return
+        }
+        // Staring: face centred and present for 6 s, nothing else happening
+        if (f != null && faceFresh() && abs(f.x) < 0.25f && now - presentSince > 6000) {
+            if (stareSince == 0L) stareSince = now
+            if (now - stareSince > 6000 && now - lastStareReact > 60_000 && now > emotionLockedUntil) {
+                lastStareReact = now
+                stareSince = 0L
+                react(Emotion.SHY, listOf("Why are you staring at me?", "Hehe, you're making me shy.", "Do I have something on my face?").random(), 3500)
+            }
+        } else {
+            stareSince = 0L
+        }
+    }
+
+    /** Phone shaken hard several times. */
+    fun onShaken() {
+        if (asleep || dead) return
+        cancelMove()
+        drive(0, 0)
+        react(Emotion.DIZZY, listOf("Stop shaking me!", "Whoa, I'm dizzy!", "Earthquake!").random(), 3000)
+    }
+
+    /** Robot picked up (true) or put back down (false). */
+    fun onLifted(up: Boolean) {
+        lifted = up
+        if (dead) return
+        if (up) {
+            cancelMove()
+            drive(0, 0)
+            asleep = false
+            react(Emotion.SCARED, listOf("Whoa! Put me down!", "I'm flying!", "Careful, I'm fragile!").random(), 60_000)
+        } else {
+            react(Emotion.HAPPY, listOf("Phew, solid ground.", "Thanks for putting me down.", "Home sweet floor.").random(), 2500)
+            perform(Move.WIGGLE_SMALL)
+        }
+    }
+
+    private fun dayPeriod(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "morning"
+        in 12..17 -> "afternoon"
+        in 18..21 -> "evening"
+        else -> "night"
     }
 
     // ================================================================ commands
@@ -175,6 +302,38 @@ class Brain(
                 }
                 singSong(song)
             }
+            has("be angry", "get angry", "angry") -> {
+                react(Emotion.ANGRY, listOf("Grrr!", "Grrrr! I'm angry!", "Hmph!").random()); perform(Move.GROWL)
+            }
+            has("be scared", "scared", "boo") -> {
+                react(Emotion.SCARED, listOf("Eek!", "Aaah! Don't scare me!", "I'm scared!").random()); perform(Move.TREMBLE)
+            }
+            has("be happy", "smile") -> {
+                react(Emotion.HAPPY, "Yay! I'm happy!"); perform(Move.WIGGLE)
+            }
+            has("be sad") -> {
+                react(Emotion.SAD, "Aww. Now I'm sad."); perform(Move.TURN_AWAY_SMALL)
+            }
+            has("cry") -> {
+                react(Emotion.CRYING, "Boo hoo hoo.", 4000); perform(Move.TREMBLE)
+            }
+            has("laugh") -> {
+                react(Emotion.LAUGH, "Hahaha! Hahaha!", 3000); perform(Move.WIGGLE)
+            }
+            has("say sorry", "apologize") -> {
+                react(Emotion.SHY, "I'm sorry. Please forgive me.", 3500); perform(Move.TURN_AWAY_SMALL)
+            }
+            has("i love you", "show me love", "give me a kiss") -> {
+                react(Emotion.LOVE, listOf("I love you too!", "Mwah!", "You're my favourite human!").random(), 4000)
+                perform(Move.WIGGLE)
+            }
+            has("celebrate", "party") -> {
+                react(Emotion.EXCITED, "Woohoo! Party time!", 3500); perform(Move.CELEBRATE)
+            }
+            has("look around") -> {
+                react(Emotion.CURIOUS, "Let me look around."); perform(Move.SEARCH)
+            }
+            has("do a trick", "show me a trick", "trick") -> doRandomTrick()
             has("stop", "freeze", "sit", "stay", "wait") -> {
                 urgentStop()
                 react(Emotion.NEUTRAL, if (has("sit")) "Sitting." else listOf("Okay.", "Staying.").random())
@@ -255,6 +414,10 @@ class Brain(
             Emotion.HAPPY -> perform(Move.WIGGLE_SMALL)
             Emotion.SURPRISED -> perform(Move.BACK_OFF)
             Emotion.SAD -> perform(Move.TURN_AWAY_SMALL)
+            Emotion.LAUGH, Emotion.EXCITED -> perform(Move.WIGGLE)
+            Emotion.SCARED -> perform(Move.TREMBLE)
+            Emotion.ANGRY -> perform(Move.GROWL)
+            Emotion.LOVE, Emotion.SHY -> perform(Move.WIGGLE_SMALL)
             else -> {}
         }
     }
@@ -327,6 +490,17 @@ class Brain(
     }
 
     // ================================================================ tricks
+    private fun doRandomTrick() {
+        when (Random.nextInt(6)) {
+            0 -> { react(Emotion.HAPPY, "Watch me spin!"); perform(Move.SPIN) }
+            1 -> { react(Emotion.HAPPY, "Dance time!"); perform(Move.DANCE) }
+            2 -> playDead()
+            3 -> { react(Emotion.ANGRY, "Grrr! Just kidding."); perform(Move.GROWL) }
+            4 -> singSong(Songs.all.random())
+            else -> { react(Emotion.EXCITED, "Ta-da!"); perform(Move.CELEBRATE) }
+        }
+    }
+
     private fun playDead() {
         deadJob?.cancel()
         dead = true
@@ -381,8 +555,10 @@ class Brain(
             emotion.value = Emotion.SLEEPY
         } else if (now > emotionLockedUntil) {
             val since = now - lastFaceSeen
+            // Falls asleep faster late at night
+            val sleepAfter = if (dayPeriod() == "night") 60_000L else sleepAfterMs
             emotion.value = when {
-                since > sleepAfterMs -> Emotion.SLEEPY
+                since > sleepAfter -> Emotion.SLEEPY
                 since > boredAfterMs -> Emotion.BORED
                 now - handAt < 600 -> Emotion.CURIOUS
                 face != null -> Emotion.HAPPY
@@ -390,10 +566,12 @@ class Brain(
             }
         }
 
+        watchPeople(now)
+
         if (moveJob?.isActive == true) return
 
         val sleepy = asleep || dead || emotion.value == Emotion.SLEEPY
-        if (paused || sleepy) {
+        if (paused || sleepy || lifted) {
             drive(0, 0)
             return
         }
@@ -443,6 +621,11 @@ class Brain(
             in 80..89 -> { // sneeze
                 setEmotion(Emotion.SURPRISED, 1200)
                 speak("Achoo!", Emotion.SURPRISED)
+                perform(Move.HOP)
+            }
+            in 90..94 -> if (bored) { // asks for attention
+                setEmotion(Emotion.SAD, 2500)
+                speak(listOf("Play with me!", "I'm bored.", "Anybody there?").random(), Emotion.SAD)
                 perform(Move.HOP)
             }
             else -> if (bored) { // hum
@@ -504,6 +687,14 @@ class Brain(
         TURN_AWAY(listOf(Step(200, -200, 750))),
         TURN_AWAY_SMALL(listOf(Step(170, -170, 300))),
         HOP(listOf(Step(200, 200, 150), Step(-200, -200, 150))),
+        TREMBLE(List(8) { i -> if (i % 2 == 0) Step(120, -120, 60) else Step(-120, 120, 60) }),
+        GROWL(listOf(Step(200, 200, 140), Step(-200, -200, 140), Step(200, 200, 140), Step(-200, -200, 140))),
+        SEARCH(listOf(
+            Step(-150, 150, 500), Step(0, 0, 700),
+            Step(150, -150, 1000), Step(0, 0, 700),
+            Step(-150, 150, 500),
+        )),
+        CELEBRATE(listOf(Step(220, -220, 650), Step(-180, 180, 140), Step(180, -180, 140), Step(-180, 180, 140), Step(180, -180, 140))),
         DIE(listOf(Step(-230, -230, 200), Step(230, -230, 350), Step(0, 0, 100))),
         DANCE(
             listOf(
