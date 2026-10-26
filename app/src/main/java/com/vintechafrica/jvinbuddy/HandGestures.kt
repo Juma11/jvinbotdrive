@@ -13,7 +13,7 @@ import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
 import kotlin.math.abs
 import kotlin.math.hypot
 
-/** Hand signs the robot understands. LEFT/RIGHT are sides of the camera image. */
+/** Hand signs the robot understands. LEFT/RIGHT are your left and right. */
 enum class HandSign { GUN, WAVE, PALM_STOP, THUMB_UP, THUMB_DOWN, PEACE, POINT_UP, FIST, LOVE, POINT_LEFT, POINT_RIGHT }
 
 /**
@@ -28,6 +28,8 @@ class HandGestures(
     context: Context,
     private val prefs: Prefs,
     private val onSign: (HandSign) -> Unit,
+    /** Hand position for the eyes: x -1..1 (your left..your right), y -1..1 (up..down). */
+    private val onHand: (Float, Float) -> Unit = { _, _ -> },
 ) {
     private val recognizer: GestureRecognizer? = try {
         val base = BaseOptions.builder()
@@ -58,6 +60,10 @@ class HandGestures(
     private var lastFiredAt = 0L
     private var lastTs = 0L
 
+    /** Last time a hand was seen. The camera gives hands more frames while one is in view. */
+    @Volatile var lastHandAt = 0L
+        private set
+
     // Wave tracking: wrist x over the last 1.5 s while the palm is open
     private val palm = ArrayDeque<Pair<Long, Float>>()
 
@@ -81,6 +87,10 @@ class HandGestures(
             return
         }
         val lm = hands[0]
+        lastHandAt = SystemClock.elapsedRealtime()
+        // Fingertip if pointing, else middle of the hand. Mirrored so x matches your side.
+        val p = if (lm[8].y() < lm[6].y()) lm[8] else lm[9]
+        onHand((1f - 2f * p.x()).coerceIn(-1f, 1f), (2f * p.y() - 1f).coerceIn(-1f, 1f))
         val canned = result.gestures().firstOrNull()?.firstOrNull()
             ?.takeIf { it.score() > 0.5f }?.categoryName()
 
@@ -107,7 +117,7 @@ class HandGestures(
         if (index && !middle && !ring && !pinky) {
             palm.clear()
             if (thumbOut) return HandSign.GUN
-            val vx = lm[8].x() - lm[5].x()
+            val vx = lm[5].x() - lm[8].x() // mirrored: positive = pointing to YOUR right
             val vy = lm[8].y() - lm[5].y()
             return when {
                 abs(vx) > abs(vy) * 1.2f -> if (vx > 0) HandSign.POINT_RIGHT else HandSign.POINT_LEFT

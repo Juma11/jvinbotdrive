@@ -23,8 +23,11 @@ import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** x: -1 (left of frame) .. 1 (right). size: face width as a fraction of frame width. */
-data class FaceInfo(val x: Float, val size: Float)
+/**
+ * x: -1 .. 1, your left .. your right (camera image mirrored, like a mirror).
+ * y: -1 (top) .. 1 (bottom). size: face width as a fraction of frame width.
+ */
+data class FaceInfo(val x: Float, val y: Float, val size: Float)
 
 /**
  * The robot's eyes. Front camera at low resolution, tuned for the Tecno Spark 4.
@@ -85,7 +88,10 @@ class FaceTracker(
             val bitmap = upright(proxy.toBitmap(), proxy.imageInfo.rotationDegrees)
             frameIndex++
             val h = hands
-            if (h != null && h.enabled && frameIndex % 2L == 0L) {
+            // Hands get 2 of every 3 frames while a hand is in view, else every other frame.
+            val handActive = h != null && SystemClock.elapsedRealtime() - h.lastHandAt < 1000
+            val handFrame = if (handActive) frameIndex % 3L != 0L else frameIndex % 2L == 0L
+            if (h != null && h.enabled && handFrame) {
                 h.process(bitmap)
             } else {
                 detectFace(bitmap)
@@ -105,10 +111,12 @@ class FaceTracker(
             emptyList()
         }
         val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
         val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
         val info = face?.let {
             FaceInfo(
-                x = ((it.boundingBox.exactCenterX() / width) * 2f - 1f).coerceIn(-1f, 1f),
+                x = (1f - (it.boundingBox.exactCenterX() / width) * 2f).coerceIn(-1f, 1f),
+                y = ((it.boundingBox.exactCenterY() / height) * 2f - 1f).coerceIn(-1f, 1f),
                 size = it.boundingBox.width() / width,
             )
         }

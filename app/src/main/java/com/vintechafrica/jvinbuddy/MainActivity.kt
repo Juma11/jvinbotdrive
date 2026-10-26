@@ -108,7 +108,11 @@ class MainActivity : ComponentActivity() {
         brain = Brain(link, prefs, lifecycleScope) { text, emotion -> voice.say(text, emotion) }
         ai = AiClient(prefs)
         hands = try {
-            HandGestures(this, prefs) { sign -> runOnUiThread { brain.onGesture(sign) } }
+            HandGestures(
+                this, prefs,
+                onSign = { sign -> runOnUiThread { brain.onGesture(sign) } },
+                onHand = { x, y -> runOnUiThread { brain.onHand(x, y) } },
+            )
         } catch (e: Throwable) {
             null
         }
@@ -254,6 +258,8 @@ class MainActivity : ComponentActivity() {
     private fun Screen() {
         val emotion by brain.emotion.collectAsState()
         val look by brain.lookX.collectAsState()
+        val lookY by brain.lookY.collectAsState()
+        val winkAt by brain.winkAt.collectAsState()
         val follow by brain.follow.collectAsState()
         val listening by voice.listening.collectAsState()
         val speaking by voice.speaking.collectAsState()
@@ -285,7 +291,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
         ) {
-            RobotFace(emotion = emotion, lookX = look, listening = listening, speaking = speaking)
+            RobotFace(
+                emotion = emotion, lookX = look, lookY = lookY, winkAt = winkAt,
+                listening = listening, speaking = speaking,
+            )
 
             if (prefs.showStatus) {
                 val parts = buildList {

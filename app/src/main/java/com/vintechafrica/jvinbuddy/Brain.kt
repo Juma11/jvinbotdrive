@@ -24,7 +24,9 @@ class Brain(
     private val speak: (String, Emotion) -> Unit,
 ) {
     val emotion = MutableStateFlow(Emotion.NEUTRAL)
-    val lookX = MutableStateFlow(0f)
+    val lookX = MutableStateFlow(0f)   // -1 left .. 1 right, as seen on the screen
+    val lookY = MutableStateFlow(0f)   // -1 up .. 1 down
+    val winkAt = MutableStateFlow(0L)  // face winks when this changes
     val follow = MutableStateFlow(true)
 
     /** True while listening for a question, so the motors stay quiet. */
@@ -42,6 +44,7 @@ class Brain(
     private var dead = false
     private var nextIdleAt = SystemClock.elapsedRealtime() + 8_000
     private var idleLookUntil = 0L
+    private var handAt = 0L
 
     // ---------------------------------------------------------------- tuning
     private val turnGain = 170f       // PWM per unit of face offset
@@ -69,7 +72,11 @@ class Brain(
             face = info
             faceAt = now
             lastFaceSeen = now
-            if (now > idleLookUntil) lookX.value = if (prefs.invertSteer) -info.x else info.x
+            // Eyes follow a hand first (doctor finger test), then the face.
+            if (now > idleLookUntil && now - handAt > 500) {
+                lookX.value = if (prefs.invertSteer) -info.x else info.x
+                lookY.value = info.y
+            }
             if (asleep || dead) return
             if (gone > 10_000) {
                 setEmotion(Emotion.CURIOUS, 1200)
@@ -82,8 +89,19 @@ class Brain(
             }
         } else {
             face = null
-            if (now > idleLookUntil) lookX.value = lookX.value * 0.9f
+            if (now > idleLookUntil && now - handAt > 500) {
+                lookX.value = lookX.value * 0.9f
+                lookY.value = lookY.value * 0.9f
+            }
         }
+    }
+
+    /** A hand in view. The eyes track it; the body keeps following the face. */
+    fun onHand(x: Float, y: Float) {
+        if (asleep || dead) return
+        handAt = SystemClock.elapsedRealtime()
+        lookX.value = if (prefs.invertSteer) -x else x
+        lookY.value = y
     }
 
     fun onBump() {
@@ -110,6 +128,7 @@ class Brain(
             dead -> revive()
             else -> {
                 setEmotion(Emotion.HAPPY, 3000)
+                winkAt.value = SystemClock.elapsedRealtime()
                 perform(Move.WIGGLE_SMALL)
                 speak(listOf("Hehe!", "That tickles!", "I like that.", "More please!").random(), Emotion.HAPPY)
             }
@@ -334,6 +353,7 @@ class Brain(
             emotion.value = when {
                 since > sleepAfterMs -> Emotion.SLEEPY
                 since > boredAfterMs -> Emotion.BORED
+                now - handAt < 600 -> Emotion.CURIOUS
                 face != null -> Emotion.HAPPY
                 else -> Emotion.NEUTRAL
             }
@@ -379,6 +399,7 @@ class Brain(
             in 0..39 -> { // look around with the eyes only
                 idleLookUntil = now + 1800
                 lookX.value = if (Random.nextBoolean()) 0.8f else -0.8f
+                lookY.value = Random.nextFloat() * 1.2f - 0.6f
             }
             in 40..64 -> { // peek left or right with the body
                 idleLookUntil = now + 1000
@@ -427,6 +448,7 @@ class Brain(
                 delay((step.ms * stretch).toLong())
             }
             drive(0, 0)
+            if (move == Move.SPIN || move == Move.DANCE) setEmotion(Emotion.DIZZY, 2200)
         }
     }
 
