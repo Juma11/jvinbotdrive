@@ -151,7 +151,7 @@ fun RobotFace(
                 cornerRadius = CornerRadius(eyeW * 0.3f, eyeW * 0.3f),
             )
             // Happy squint: cut the bottom of the eye into a smile shape.
-            if (emotion == Emotion.HAPPY && eh > h * 0.1f) {
+            if ((emotion == Emotion.HAPPY || emotion == Emotion.SINGING) && eh > h * 0.1f) {
                 drawOval(
                     color = black,
                     topLeft = Offset(cx - eyeW * 0.75f, eyeY + eh * 0.12f),
@@ -159,7 +159,7 @@ fun RobotFace(
                 )
             }
             // Shine dot: moves a little with the gaze, makes the eye look wet and alive.
-            if (eh > eyeHMax * 0.35f && emotion != Emotion.HAPPY) {
+            if (eh > eyeHMax * 0.35f && emotion != Emotion.HAPPY && emotion != Emotion.SINGING) {
                 drawCircle(
                     Color.White.copy(alpha = 0.75f),
                     radius = eyeW * 0.09f,
@@ -182,7 +182,7 @@ fun RobotFace(
         }
 
         // ============================================================ cheeks
-        if (emotion == Emotion.HAPPY || emotion == Emotion.LOVE) {
+        if (emotion == Emotion.HAPPY || emotion == Emotion.LOVE || emotion == Emotion.SINGING) {
             for (side in listOf(-1, 1)) {
                 val cx = w / 2f + side * w * 0.27f + shiftX
                 drawCircle(Color(0xFFFF6FA8).copy(alpha = 0.28f), radius = eyeW * 0.24f, center = Offset(cx, eyeY + eyeHMax * 0.5f))
@@ -234,6 +234,14 @@ fun RobotFace(
                     val t = (rise + i / 4f) % 1f
                     val x = w * (0.12f + 0.25f * i) + sin(t * 6f + i) * w * 0.02f
                     heart(Offset(x, h * 1.0f - t * h * 0.9f), h * 0.04f, Color(0xFFFF6FA8).copy(alpha = 1f - t))
+                }
+            }
+            Emotion.SINGING -> { // music notes drifting up on both sides
+                for (i in 0..3) {
+                    val t = (rise + i / 4f) % 1f
+                    val left = i % 2 == 0
+                    val x = (if (left) w * 0.08f else w * 0.88f) + sin(t * 8f + i) * w * 0.03f
+                    musicNote(Offset(x, h * 0.95f - t * h * 0.85f), h * 0.05f, color.copy(alpha = 1f - t))
                 }
             }
             Emotion.DIZZY -> { // stars circling
@@ -309,6 +317,13 @@ private fun DrawScope.zee(c: Offset, s: Float, color: Color, width: Float) {
     drawLine(color, Offset(l, t), Offset(r, t), width, StrokeCap.Round)
     drawLine(color, Offset(r, t), Offset(l, b), width, StrokeCap.Round)
     drawLine(color, Offset(l, b), Offset(r, b), width, StrokeCap.Round)
+}
+
+private fun DrawScope.musicNote(c: Offset, s: Float, color: Color) {
+    drawOval(color, topLeft = Offset(c.x - s * 0.55f, c.y - s * 0.35f), size = Size(s * 1.1f, s * 0.75f))
+    val stemX = c.x + s * 0.5f
+    drawLine(color, Offset(stemX, c.y), Offset(stemX, c.y - s * 1.9f), s * 0.18f, StrokeCap.Round)
+    drawLine(color, Offset(stemX, c.y - s * 1.9f), Offset(stemX + s * 0.7f, c.y - s * 1.4f), s * 0.18f, StrokeCap.Round)
 }
 
 private fun DrawScope.star(c: Offset, r: Float, color: Color) {

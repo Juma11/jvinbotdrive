@@ -11,7 +11,7 @@
 const EMOTIONS = ["HAPPY", "CURIOUS", "SAD", "SURPRISED", "THINKING", "NEUTRAL", "BORED"];
 
 function systemPrompt(env) {
-  const name = env.ROBOT_NAME || "JVin";
+  const name = env.ROBOT_NAME || "VinBot";
   const owner = env.OWNER_NAME || "Vincent";
   return `You are ${name}, a small wheeled robot pet built by ${owner} in Nairobi, Kenya.
 Your face is a phone screen, you see with its camera and you talk through its speaker.

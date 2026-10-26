@@ -90,14 +90,29 @@ The repo has a fixed debug key, so each new build installs over the old one.
 | Manual controller (AP) | Yes | Yes |
 | Voice commands (always listening) | Yes | Yes |
 | Time, date, name, greetings, battery, jokes | Yes | Yes |
-| "hey buddy" questions and web research | Yes | No, it says it is offline |
+| "hey vinbot" questions and web research | Yes | No, it says it is offline |
 
 ## Use
 
-No button pressing. The robot always listens for commands, fully offline.
+No button pressing. Say **"hey vinbot"** first, then the command or question.
 
-- **Talk to it:** say **"hey buddy"**, wait for the curious face and red dot, then ask anything.
-- **Tap face:** pet it. **Double tap:** ask a question. **Long press:** settings.
+- **"hey vinbot" ... "sit" / "dance" / "sing" / any question.** Online, it hears the whole sentence. Offline, it says "Yes?" and takes one command in the next 7 seconds.
+- **"stop" and "freeze" always work**, no wake word, so you can always stop it.
+- **Setting "Wake word needed" off:** commands work any time without "hey vinbot" (more fun, more false triggers).
+- **Tap face:** pet it (it winks). **Double tap:** ask a question. **Long press:** settings.
+
+"VinBot" is not an English word, so the offline ears match it to sound-alikes ("hey vin bot", "hey ben bot", "hey bin bot"...). Say it clearly as two parts: "hey VIN-BOT". "hey robot" also works.
+
+**Singing**
+
+| Say (after "hey vinbot") | It sings |
+|---|---|
+| sing, sing a song, sing for me | A random song: Twinkle Twinkle or one of its own robot songs |
+| sing happy birthday / sing happy birthday to Brian | Happy Birthday, with the name (name needs internet) |
+| sing twinkle twinkle | Twinkle Twinkle Little Star |
+| sing about the rain (any topic, online) | The AI writes an original 4-line song and it sings it |
+
+While singing it sways side to side, its eyes squint happily and music notes float up. It is text-to-speech with a pitch per syllable, so it sounds like a robot singing, with small gaps between syllables on the Spark 4. Add songs in `Songs.kt`. Use only public domain songs or your own lyrics.
 
 **Hand signs (offline, no talking needed)**
 
@@ -147,7 +162,7 @@ If pointing turns the wrong way, the face-follow steering is also wrong: fix bot
 
 To add a command: add the phrase to `Commands.kt`, then handle it in `Brain.handleCommand`. Use real English words only.
 
-**Local answers (with "hey buddy"):** time, date, your name, who made you, how are you, what can you do, battery, hello, thanks, jokes (offline).
+**Local answers (with "hey vinbot"):** time, date, your name, who made you, how are you, what can you do, battery, hello, thanks, jokes (offline).
 
 ## Emotions
 
@@ -161,4 +176,7 @@ To add a command: add the phrase to `Commands.kt`, then handle it in `Brain.hand
 | Sad | "bad robot", "go away", offline question | Turns away |
 | Tired | Battery below threshold | Asks to charge |
 | Thinking | Waiting for the AI | Small head shake |
+| Singing | "sing" | Sways, music notes, happy eyes |
+| Dizzy | After spin or dance | Spiral eyes, stars |
+| Love | Rock hand sign | Heart eyes, floating hearts |
 | Dead | "bang", "shoot", "play dead" | Falls back, X eyes, revives |

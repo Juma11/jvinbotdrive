@@ -48,6 +48,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("gestures", true)
         set(v) = sp.edit().putBoolean("gestures", v).apply()
 
+    /** True: commands only work after "hey vinbot" (except stop). False: always listening for commands. */
+    var wakeRequired: Boolean
+        get() = sp.getBoolean("wakeRequired", true)
+        set(v) = sp.edit().putBoolean("wakeRequired", v).apply()
+
     var showStatus: Boolean
         get() = sp.getBoolean("showStatus", true)
         set(v) = sp.edit().putBoolean("showStatus", v).apply()

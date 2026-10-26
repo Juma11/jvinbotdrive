@@ -30,7 +30,7 @@ object LocalReplies {
             has("your battery", "battery level", "battery status", "how is your battery") ->
                 if (battery != null) Emotion.NEUTRAL to "My battery is at %.1f volts.".format(battery)
                 else Emotion.CURIOUS to "I can't feel my battery yet. Vincent has not wired my battery sensor."
-            has("your name", "who are you") -> Emotion.HAPPY to "I'm JVin, your robot buddy."
+            has("your name", "who are you") -> Emotion.HAPPY to "I'm VinBot, your robot buddy."
             has("who made you", "who built you", "who created you") ->
                 Emotion.HAPPY to "Vincent built me at Vintech Africa."
             has("how are you") -> Emotion.HAPPY to "I'm great. My wheels are ready to roll."

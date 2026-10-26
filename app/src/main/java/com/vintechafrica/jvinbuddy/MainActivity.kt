@@ -56,8 +56,9 @@ import kotlinx.coroutines.launch
 
 /**
  * JVin Buddy.
- *  - Always listening (offline) for dog commands: "come here", "bang", "go round"...
- *  - Say "hey buddy", then ask anything (needs internet).
+ *  - Say "hey vinbot", then a command ("sit", "dance", "sing") or any question.
+ *    "stop" always works with no wake word.
+ *  - Setting "Wake word needed" off = commands work any time, no wake word.
  *  - Hand signs (offline): finger gun, wave, stop palm, thumbs, peace, point, fist, love.
  *  - Tap the face = pet it. Double tap = ask a question. Long press = settings.
  */
@@ -72,6 +73,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var ai: AiClient
     private lateinit var ears: Ears
     private var hands: HandGestures? = null
+
+    /** After a wake word with no internet: offline commands accepted until this time. */
+    private var armedUntil = 0L
 
     private var cameraStarted = false
     private var offlineHintGiven = false
@@ -105,7 +109,11 @@ class MainActivity : ComponentActivity() {
             onListenError = ::onListenError,
         )
         ears = Ears(this, onPhrase = ::onPhrase, onUrgentStop = { brain.urgentStop() })
-        brain = Brain(link, prefs, lifecycleScope) { text, emotion -> voice.say(text, emotion) }
+        brain = Brain(
+            link, prefs, lifecycleScope,
+            speak = { text, emotion -> voice.say(text, emotion) },
+            sing = { notes -> voice.sing(notes) },
+        )
         ai = AiClient(prefs)
         hands = try {
             HandGestures(
@@ -183,9 +191,26 @@ class MainActivity : ComponentActivity() {
     }
 
     // ---------------------------------------------------------------- talking
-    /** Heard by the always-on ears. */
+    /** Heard by the always-on offline ears. */
     private fun onPhrase(text: String) {
-        if (Commands.isWake(text)) askQuestion() else brain.handleCommand(text)
+        val now = android.os.SystemClock.elapsedRealtime()
+        when {
+            Commands.isWake(text) -> {
+                // Online: Google hears the full sentence (command or question).
+                // Offline: the offline ears take one command for the next 7 s.
+                if (Net.online(this)) {
+                    askQuestion()
+                } else {
+                    armedUntil = now + 7000
+                    brain.listeningForQuestion()
+                    voice.say("Yes?", Emotion.CURIOUS)
+                }
+            }
+            !prefs.wakeRequired || Commands.isAlways(text) || now < armedUntil -> {
+                if (brain.handleCommand(text)) armedUntil = 0L
+            }
+            // Wake word needed and not said: ignore.
+        }
     }
 
     /** Hand the mic to Google speech for one free question. */
@@ -205,6 +230,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onHeard(text: String) {
+        // 0. "sing about the rain": the AI writes an original song, the robot sings it.
+        val topic = Regex("^sing (?:a song |me a song )?(?:about|for) (.+)").find(Commands.normalize(text))?.groupValues?.get(1)
+        if (topic != null && Net.online(this) && ai.mode != "none") {
+            brain.thinking()
+            lifecycleScope.launch {
+                val (_, lyrics) = ai.ask(
+                    "Write an original, cheerful song about $topic. Exactly 4 short lines, " +
+                        "6 to 8 words each, one line per sentence, ending each with a full stop. Lyrics only."
+                )
+                brain.singSong(Songs.fromLyrics(lyrics))
+            }
+            return
+        }
+
         // 1. Commands: always local, work offline.
         if (brain.handleCommand(text)) return
 
@@ -234,12 +273,15 @@ class MainActivity : ComponentActivity() {
             SpeechRecognizer.ERROR_NETWORK,
             SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
             SpeechRecognizer.ERROR_SERVER -> {
-                if (!online && !offlineHintGiven) {
-                    offlineHintGiven = true
+                if (!online) {
+                    // No internet: let the offline ears take a command instead.
+                    armedUntil = android.os.SystemClock.elapsedRealtime() + 7000
                     voice.say(
-                        "I can't hear without internet yet. Download offline English in the Google app voice settings.",
-                        Emotion.SAD,
+                        if (offlineHintGiven) "I'm offline. Say a command." else
+                            "I'm offline, so just say a command like sit or dance.",
+                        Emotion.CURIOUS,
                     )
+                    offlineHintGiven = true
                 } else {
                     voice.say("My ears are not working right now.", Emotion.SAD)
                 }
@@ -345,6 +387,7 @@ class MainActivity : ComponentActivity() {
         var status by remember { mutableStateOf(prefs.showStatus) }
         var speed by remember { mutableIntStateOf(prefs.speedPercent) }
         var gestures by remember { mutableStateOf(prefs.gestures) }
+        var wake by remember { mutableStateOf(prefs.wakeRequired) }
         var forget by remember { mutableStateOf(false) }
         val paired = prefs.robotAddress.ifBlank { "none yet" }
 
@@ -378,6 +421,9 @@ class MainActivity : ComponentActivity() {
                         Switch(gestures, { gestures = it }); Text("  Hand gesture tricks")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(wake, { wake = it }); Text("  Wake word needed (\"hey vinbot\")")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(invert, { invert = it }); Text("  Invert steering")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -399,6 +445,7 @@ class MainActivity : ComponentActivity() {
                     prefs.showStatus = status
                     prefs.speedPercent = speed
                     prefs.gestures = gestures
+                    prefs.wakeRequired = wake
                     if (forget) prefs.robotAddress = ""
                     onSaved()
                 }) { Text("Save") }

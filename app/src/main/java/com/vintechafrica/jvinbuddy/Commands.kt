@@ -6,12 +6,22 @@ import org.json.JSONArray
  * Every phrase the always-on ears listen for. The offline recognizer only
  * matches these, so it is fast and accurate even on the Spark 4.
  * Add a phrase here AND handle it in Brain.handleCommand.
- * Use plain English words only; made-up words (like "jvin") are not in the model.
+ * Use plain English words only: made-up words are not in the speech model.
  */
 object Commands {
 
-    /** Say one of these, then ask any question. */
-    val WAKE = listOf("hey buddy", "okay buddy", "hey robot", "buddy")
+    /**
+     * Wake phrases. "VinBot" is not an English word, so the model hears it as one
+     * of these sound-alikes. Phrases with words missing from the model are skipped
+     * by Vosk automatically, so extra variants are harmless.
+     */
+    val WAKE = listOf(
+        "hey vin bot", "hey vin", "hey ben bot", "hey bin bot", "hey been bot",
+        "hey win bot", "hey when bot", "a vin bot", "hey robot",
+    )
+
+    /** Work with no wake word, always. Safety first. */
+    val ALWAYS = listOf("stop", "freeze")
 
     val PHRASES = listOf(
         // shoot / play dead
@@ -26,6 +36,9 @@ object Commands {
         "go forward", "move forward", "forward", "go ahead",
         "turn left", "go left", "turn right", "go right",
         "dance", "jump",
+        // singing
+        "sing", "sing a song", "sing for me", "sing happy birthday", "happy birthday",
+        "sing twinkle twinkle", "twinkle twinkle",
         // dog stuff
         "speak", "bark", "shake", "high five", "say hello", "fetch",
         "good boy", "good girl", "good dog", "good robot", "well done", "good job",
@@ -36,12 +49,14 @@ object Commands {
 
     fun grammarJson(): String {
         val arr = JSONArray()
-        (PHRASES + WAKE).forEach { arr.put(it) }
+        (PHRASES + WAKE).distinct().forEach { arr.put(it) }
         arr.put("[unk]")
         return arr.toString()
     }
 
     fun isWake(text: String): Boolean = normalize(text) in WAKE
+
+    fun isAlways(text: String): Boolean = normalize(text) in ALWAYS
 
     fun normalize(text: String): String =
         text.lowercase().replace(Regex("[^a-z ]"), " ").replace(Regex("\\s+"), " ").trim()

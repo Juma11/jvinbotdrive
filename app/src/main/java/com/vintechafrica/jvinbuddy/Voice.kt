@@ -11,6 +11,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Ears: Android SpeechRecognizer through the Google app. Online by default;
@@ -31,6 +32,7 @@ class Voice(
 
     private val tts = TextToSpeech(context.applicationContext, this)
     private var ttsReady = false
+    private val pending = AtomicInteger(0)
     private val recognizer: SpeechRecognizer? =
         if (available) SpeechRecognizer.createSpeechRecognizer(context) else null
 
@@ -70,10 +72,16 @@ class Voice(
             tts.setLanguage(Locale.US)
         }
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            // "speaking" stays true until every queued piece is done (songs are many pieces).
             override fun onStart(utteranceId: String?) { speaking.value = true }
-            override fun onDone(utteranceId: String?) { speaking.value = false }
+            override fun onDone(utteranceId: String?) {
+                if (pending.decrementAndGet() <= 0) {
+                    pending.set(0)
+                    speaking.value = false
+                }
+            }
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) { speaking.value = false }
+            override fun onError(utteranceId: String?) = onDone(utteranceId)
         })
         ttsReady = true
     }
@@ -83,6 +91,7 @@ class Voice(
         val r = recognizer ?: return
         if (listening.value) return
         tts.stop()
+        pending.set(0)
         speaking.value = false
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -103,9 +112,26 @@ class Voice(
 
     fun say(text: String, emotion: Emotion) {
         if (!ttsReady) return
+        pending.set(1)
+        speaking.value = true
         tts.setPitch(emotion.pitch)
         tts.setSpeechRate(emotion.rate)
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jvin-${System.currentTimeMillis()}")
+    }
+
+    /** Sing: every note is queued with its own pitch and length. */
+    fun sing(notes: List<Note>) {
+        if (!ttsReady || notes.isEmpty()) return
+        tts.stop()
+        pending.set(notes.size)
+        speaking.value = true
+        notes.forEachIndexed { i, n ->
+            tts.setPitch(n.pitch)
+            tts.setSpeechRate(n.rate)
+            tts.speak(n.text, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "sing-$i")
+        }
+        tts.setPitch(1f)
+        tts.setSpeechRate(1f)
     }
 
     fun shutdown() {

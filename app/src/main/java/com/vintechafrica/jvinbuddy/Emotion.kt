@@ -24,7 +24,8 @@ enum class Emotion(
     THINKING(0.7f, 0f, 0.3f, false, 0xFFBA68C8, 1.1f, 1.0f),
     DEAD(1.0f, -0.3f, 0f, false, 0xFFE57373, 0.75f, 0.8f), // X eyes, drawn in RobotFace
     LOVE(1.0f, 1.0f, 0f, false, 0xFFFF6FA8, 1.4f, 1.0f), // heart eyes, drawn in RobotFace
-    DIZZY(1.0f, -0.2f, 0f, true, 0xFFFFB74D, 1.2f, 0.9f); // spiral eyes after spinning
+    DIZZY(1.0f, -0.2f, 0f, true, 0xFFFFB74D, 1.2f, 0.9f), // spiral eyes after spinning
+    SINGING(0.75f, 1.0f, 0f, false, 0xFF26C6DA, 1.3f, 1.0f); // happy eyes + music notes
 
     companion object {
         fun parse(s: String?): Emotion =

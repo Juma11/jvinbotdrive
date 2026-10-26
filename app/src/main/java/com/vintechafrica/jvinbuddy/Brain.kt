@@ -22,6 +22,7 @@ class Brain(
     private val prefs: Prefs,
     private val scope: CoroutineScope,
     private val speak: (String, Emotion) -> Unit,
+    private val sing: (List<Note>) -> Unit = {},
 ) {
     val emotion = MutableStateFlow(Emotion.NEUTRAL)
     val lookX = MutableStateFlow(0f)   // -1 left .. 1 right, as seen on the screen
@@ -166,6 +167,14 @@ class Brain(
         if (asleep && !has("go to sleep", "sleep", "lie down")) wake()
 
         when {
+            has("sing", "happy birthday", "twinkle") -> {
+                val song = when {
+                    has("happy birthday") -> Songs.birthday(birthdayName(t))
+                    has("twinkle") -> Songs.twinkle
+                    else -> Songs.all.random()
+                }
+                singSong(song)
+            }
             has("stop", "freeze", "sit", "stay", "wait") -> {
                 urgentStop()
                 react(Emotion.NEUTRAL, if (has("sit")) "Sitting." else listOf("Okay.", "Staying.").random())
@@ -293,6 +302,28 @@ class Brain(
             }
             HandSign.GUN -> {}
         }
+    }
+
+    // ================================================================ singing
+    /** "happy birthday to Brian" -> "Brian". */
+    private fun birthdayName(t: String): String =
+        Regex("birthday to ([a-z]+)").find(t)?.groupValues?.get(1)
+            ?.replaceFirstChar { it.uppercase() } ?: "friend"
+
+    /** Sings and sways side to side until the song ends. */
+    fun singSong(notes: List<Note>) {
+        if (notes.isEmpty()) return
+        // Rough length: about 0.45 s per syllable, longer for slow notes.
+        val ms = notes.sumOf { (450 / it.rate).toDouble() }.toLong()
+        setEmotion(Emotion.SINGING, ms)
+        sing(notes)
+        val sways = (ms / 1200).toInt().coerceIn(1, 40)
+        val steps = mutableListOf<Step>()
+        repeat(sways) {
+            steps += Step(110, -110, 220); steps += Step(0, 0, 380)
+            steps += Step(-110, 110, 220); steps += Step(0, 0, 380)
+        }
+        performSteps(steps)
     }
 
     // ================================================================ tricks
@@ -438,12 +469,14 @@ class Brain(
         moveJob = null
     }
 
-    fun perform(move: Move) {
+    fun perform(move: Move) = performSteps(move.steps, move)
+
+    private fun performSteps(steps: List<Step>, move: Move? = null) {
         cancelMove()
         moveJob = scope.launch {
             // Slower speed = longer step, so a half turn is still about a half turn.
             val stretch = (1f / speed).coerceIn(1f, 2.5f)
-            for (step in move.steps) {
+            for (step in steps) {
                 drive(step.l, step.r)
                 delay((step.ms * stretch).toLong())
             }

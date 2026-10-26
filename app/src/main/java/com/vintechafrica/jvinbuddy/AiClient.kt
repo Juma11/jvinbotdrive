@@ -120,7 +120,7 @@ class AiClient(private val prefs: Prefs) {
     companion object {
         private val JSON = "application/json".toMediaType()
 
-        private const val SYSTEM_PROMPT = """You are JVin, a small wheeled robot pet built by Vincent in Nairobi, Kenya.
+        private const val SYSTEM_PROMPT = """You are VinBot, a small wheeled robot pet built by Vincent in Nairobi, Kenya.
 Your face is a phone screen, you see with its camera and you talk through its speaker.
 Personality: friendly, playful, curious, a little cheeky, loyal like a puppy.
 Your reply is spoken aloud by text to speech, so:
