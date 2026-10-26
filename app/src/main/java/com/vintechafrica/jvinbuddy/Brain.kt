@@ -29,7 +29,16 @@ class Brain(
     val lookX = MutableStateFlow(0f)   // -1 left .. 1 right, as seen on the screen
     val lookY = MutableStateFlow(0f)   // -1 up .. 1 down
     val winkAt = MutableStateFlow(0L)  // face winks when this changes
-    val follow = MutableStateFlow(true)
+    /** Follows your face only after "follow me" / "come here" (or always, if "Moves on its own" is on). */
+    val follow = MutableStateFlow(prefs.autoMove)
+
+    /** Last time you gave a command, gesture or started a game. Wheels only move soon after one. */
+    @Volatile private var lastCommandAt = 0L
+
+    private fun motorsAllowed(): Boolean =
+        prefs.autoMove || follow.value ||
+            SystemClock.elapsedRealtime() - lastCommandAt < 15_000 ||
+            (::games.isInitialized && games.active != null)
 
     /** True while listening for a question, so the motors stay quiet. */
     @Volatile var paused = false
@@ -78,6 +87,7 @@ class Brain(
     private var seenOnce = false
 
     val faceStamp: Long get() = faceAt
+    fun isStaring(): Boolean = ::games.isInitialized && games.active == Games.Kind.STARE
     fun currentFace(): FaceInfo? = face
     /** Face seen in the last 0.9 s (the camera only checks faces a few times a second). */
     fun faceVisible(): Boolean = face != null && SystemClock.elapsedRealtime() - faceAt < 900
@@ -133,8 +143,8 @@ class Brain(
             peekHiddenAt = 0L
 
             // Smile mirroring
-            smileFrames = if (info.smile > 0.75f) smileFrames + 1 else 0
-            if (smileFrames >= 3 && now > emotionLockedUntil && now - lastSmileReact > 8000) {
+            if (info.smile >= 0f) smileFrames = if (info.smile > 0.75f) smileFrames + 1 else 0
+            if (smileFrames >= 2 && now > emotionLockedUntil && now - lastSmileReact > 8000) {
                 lastSmileReact = now
                 setEmotion(Emotion.HAPPY, 2500)
                 winkAt.value = now
@@ -368,6 +378,12 @@ class Brain(
     fun handleCommand(raw: String): Boolean {
         val t = Commands.normalize(raw)
         if (t.isEmpty()) return false
+        val handled = handleCommandInner(t)
+        if (handled) lastCommandAt = SystemClock.elapsedRealtime()
+        return handled
+    }
+
+    private fun handleCommandInner(t: String): Boolean {
         fun has(vararg phrases: String) = phrases.any { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(t) }
 
         // Shooting works even when it is already "dead" (shoot it again).
@@ -526,6 +542,7 @@ class Brain(
 
     // ================================================================ hand signs
     fun onGesture(sign: HandSign) {
+        lastCommandAt = SystemClock.elapsedRealtime()
         if (::games.isInitialized && games.active != null) return
         needs.interacted(socialGain = 3f, funGain = 2f)
         if (sign == HandSign.GUN) {
@@ -1003,8 +1020,10 @@ class Brain(
         moveJob = scope.launch {
             // Slower speed = longer step, so a half turn is still about a half turn.
             val stretch = (1f / speed).coerceIn(1f, 2.5f)
+            // Without a recent command the wheels stay still: the face still acts it out.
+            val wheels = motorsAllowed()
             for (step in steps) {
-                drive(step.l, step.r)
+                if (wheels) drive(step.l, step.r) else drive(0, 0)
                 delay((step.ms * stretch).toLong())
             }
             drive(0, 0)

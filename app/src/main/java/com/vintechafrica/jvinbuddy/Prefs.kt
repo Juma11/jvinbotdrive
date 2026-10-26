@@ -76,7 +76,18 @@ class Prefs(context: Context) {
     fun getString(key: String, def: String) = sp.getString(key, def) ?: def
     fun putString(key: String, v: String) = sp.edit().putString(key, v).apply()
 
+    /** Off (default): wheels move only after a command, gesture or game. On: follows faces and wanders by itself. */
+    var autoMove: Boolean
+        get() = sp.getBoolean("autoMove", false)
+        set(v) = sp.edit().putBoolean("autoMove", v).apply()
+
+    /** Screen brightness 0.1..1. Lower = less AMOLED burn-in and longer battery. */
+    var brightness: Float
+        get() = sp.getFloat("brightness", 0.55f)
+        set(v) = sp.edit().putFloat("brightness", v.coerceIn(0.1f, 1f)).apply()
+
+    /** Always show the status line. Off: it shows for 30 s after start or settings, then hides (burn-in). */
     var showStatus: Boolean
-        get() = sp.getBoolean("showStatus", true)
-        set(v) = sp.edit().putBoolean("showStatus", v).apply()
+        get() = sp.getBoolean("showStatus2", false)
+        set(v) = sp.edit().putBoolean("showStatus2", v).apply()
 }

@@ -12,8 +12,10 @@ android {
         applicationId = "com.vintechafrica.jvinbuddy"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // GitHub build number, so every build is newer than the last and shows on screen.
+        val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = run
+        versionName = "9.$run"
     }
 
     // Fixed debug key so every GitHub build installs over the last one.
@@ -40,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     // MediaPipe reads its model straight from the APK; keep it uncompressed.
     androidResources {

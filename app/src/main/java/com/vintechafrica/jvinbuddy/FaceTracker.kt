@@ -46,17 +46,26 @@ data class FaceInfo(
 class FaceTracker(
     private val onFace: (FaceInfo?) -> Unit,
     private val hands: HandGestures?,
+    /** True while a game needs smile/eye scores on every frame (staring contest). */
+    private val needClassify: () -> Boolean = { false },
 ) {
-    private val detector = FaceDetection.getClient(
-        FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
-            // Smile and eyes-open scores: smile mirroring and the staring contest.
-            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-            .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE)
-            .setMinFaceSize(0.12f)
-            .build()
-    )
+    private fun options(classify: Boolean) = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
+        .setClassificationMode(
+            if (classify) FaceDetectorOptions.CLASSIFICATION_MODE_ALL else FaceDetectorOptions.CLASSIFICATION_MODE_NONE
+        )
+        .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE)
+        .setMinFaceSize(0.15f)
+        .build()
+
+    // Fast detector for most frames; the slower smile/eyes one only every 3rd face frame.
+    private val detector = FaceDetection.getClient(options(false))
+    private val classifier = FaceDetection.getClient(options(true))
+    private var faceFrames = 0L
+
+    /** 8-core phones (Galaxy A32 and up) get bigger frames and more hand checks. */
+    private val fastPhone = Runtime.getRuntime().availableProcessors() >= 8
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var frameIndex = 0L
@@ -74,7 +83,7 @@ class FaceTracker(
                 val selector = ResolutionSelector.Builder()
                     .setResolutionStrategy(
                         ResolutionStrategy(
-                            Size(480, 360),
+                            if (fastPhone) Size(480, 360) else Size(320, 240), // small frames on slow phones
                             ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
                         )
                     )
@@ -98,9 +107,13 @@ class FaceTracker(
             val bitmap = upright(proxy.toBitmap(), proxy.imageInfo.rotationDegrees)
             frameIndex++
             val h = hands
-            // Hands get 2 of every 3 frames while a hand is in view, else every other frame.
-            val handActive = h != null && SystemClock.elapsedRealtime() - h.lastHandAt < 1000
-            val handFrame = if (handActive) frameIndex % 3L != 0L else frameIndex % 2L == 0L
+            // Hands get 2 of every 3 frames while a hand is in view, else 1 of every 3.
+            val handActive = h != null && SystemClock.elapsedRealtime() - h.lastHandAt < 1500
+            val handFrame = when {
+                handActive -> frameIndex % 3L != 0L
+                fastPhone -> frameIndex % 2L == 0L
+                else -> frameIndex % 3L == 0L
+            }
             if (h != null && h.enabled && handFrame) {
                 h.process(bitmap)
             } else {
@@ -116,7 +129,9 @@ class FaceTracker(
 
     private fun detectFace(bitmap: Bitmap) {
         val faces = try {
-            Tasks.await(detector.process(InputImage.fromBitmap(bitmap, 0)), 2, TimeUnit.SECONDS)
+            faceFrames++
+            val d = if (needClassify() || faceFrames % (if (fastPhone) 2L else 3L) == 0L) classifier else detector
+            Tasks.await(d.process(InputImage.fromBitmap(bitmap, 0)), 2, TimeUnit.SECONDS)
         } catch (e: Exception) {
             emptyList()
         }
@@ -155,6 +170,7 @@ class FaceTracker(
 
     fun shutdown() {
         detector.close()
+        classifier.close()
         executor.shutdown()
     }
 

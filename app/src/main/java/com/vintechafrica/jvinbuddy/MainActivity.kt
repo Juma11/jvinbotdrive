@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -134,7 +135,7 @@ class MainActivity : ComponentActivity() {
         } catch (e: Throwable) {
             null
         }
-        tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands)
+        tracker = FaceTracker(onFace = { brain.onFace(it) }, hands = hands, needClassify = { brain.isStaring() })
         brain.games = Games(brain, hands, prefs, lifecycleScope)
         senses = Senses(
             this,
@@ -157,11 +158,36 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        setBrightness(prefs.brightness)
+        askToSkipBatteryLimits()
+
         val missing = permissions.filter { !granted(it) }
         if (missing.isEmpty()) startWhatWeCan() else permLauncher.launch(missing.toTypedArray())
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) { Screen() }
+        }
+    }
+
+    /** Window brightness only (not the phone's system setting). */
+    private fun setBrightness(level: Float) {
+        val lp = window.attributes
+        lp.screenBrightness = level.coerceIn(0.05f, 1f)
+        window.attributes = lp
+    }
+
+    /** Samsung and Tecno throttle or kill background-heavy apps. Ask once to be left alone. */
+    private fun askToSkipBatteryLimits() {
+        if (prefs.getInt("asked_battery", 0) == 1) return
+        prefs.putInt("asked_battery", 1)
+        val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(android.net.Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) {
         }
     }
 
@@ -354,11 +380,31 @@ class MainActivity : ComponentActivity() {
         var showSettings by remember { mutableStateOf(false) }
         var fps by remember { mutableFloatStateOf(0f) }
         var online by remember { mutableStateOf(false) }
+        var statusUntil by remember { mutableStateOf(android.os.SystemClock.elapsedRealtime() + 30_000) }
+        var nowTick by remember { mutableStateOf(0L) }
+        var errorSince by remember { mutableStateOf(0L) }
+
+        // Burn-in guard: the whole face drifts a few pixels every 2 minutes.
+        var shiftX by remember { mutableStateOf(0) }
+        var shiftY by remember { mutableStateOf(0) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(120_000)
+                shiftX = (-10..10).random()
+                shiftY = (-8..8).random()
+            }
+        }
+        // Dim the screen while it sleeps
+        LaunchedEffect(emotion) {
+            setBrightness(if (emotion == Emotion.SLEEPY) 0.08f else prefs.brightness)
+        }
+        LaunchedEffect(brainError) { errorSince = android.os.SystemClock.elapsedRealtime() }
 
         LaunchedEffect(Unit) {
             while (true) {
                 fps = tracker.fps
                 online = Net.online(this@MainActivity)
+                nowTick = android.os.SystemClock.elapsedRealtime()
                 delay(1000)
             }
         }
@@ -378,6 +424,7 @@ class MainActivity : ComponentActivity() {
             RobotFace(
                 emotion = emotion, lookX = look, lookY = lookY, winkAt = winkAt,
                 listening = listening, speaking = speaking, noBlink = noBlink,
+                modifier = Modifier.offset(x = shiftX.dp, y = shiftY.dp),
             )
 
             // Game overlay: hands, scores
@@ -394,8 +441,20 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            if (prefs.showStatus) {
+            // Status text never moves, so it burns in first: show it briefly, then hide.
+            val showText = prefs.showStatus || nowTick < statusUntil
+            // Errors show for 20 s, then hide
+            if (brainError.isNotBlank() && nowTick - errorSince < 20_000 && !showText) {
+                Text(
+                    text = brainError,
+                    color = Color(0xCCFF8A80),
+                    fontSize = 11.sp,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                )
+            }
+            if (showText) {
                 val parts = buildList {
+                    add("v${BuildConfig.VERSION_NAME}")
                     add(if (manual) "MANUAL CONTROL" else linkStatus)
                     battery?.let { add("%.2f V".format(it)) }
                     add(if (online) "online" else "offline")
@@ -444,6 +503,7 @@ class MainActivity : ComponentActivity() {
             SettingsDialog(
                 onDismiss = { showSettings = false },
                 onSaved = {
+                    statusUntil = android.os.SystemClock.elapsedRealtime() + 30_000
                     showSettings = false
                     recreate()
                 },
@@ -460,9 +520,11 @@ class MainActivity : ComponentActivity() {
         var low by remember { mutableStateOf(prefs.lowBattery.toString()) }
         var invert by remember { mutableStateOf(prefs.invertSteer) }
         var status by remember { mutableStateOf(prefs.showStatus) }
+        var bright by remember { mutableStateOf(prefs.brightness) }
         var speed by remember { mutableIntStateOf(prefs.speedPercent) }
         var gestures by remember { mutableStateOf(prefs.gestures) }
         var wake by remember { mutableStateOf(prefs.wakeRequired) }
+        var autoMove by remember { mutableStateOf(prefs.autoMove) }
         var birthday by remember { mutableStateOf(prefs.birthday) }
         var forget by remember { mutableStateOf(false) }
         val paired = prefs.robotAddress.ifBlank { "none yet" }
@@ -502,14 +564,19 @@ class MainActivity : ComponentActivity() {
                         Switch(gestures, { gestures = it }); Text("  Hand gesture tricks")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(wake, { wake = it }); Text("  Wake word needed (\"hey vinbot\")")
+                        Switch(wake, { wake = it }); Text("  Wake word needed for commands (off = faster)")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(autoMove, { autoMove = it }); Text("  Moves on its own (follows, wanders)")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(invert, { invert = it }); Text("  Invert steering")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(status, { status = it }); Text("  Show status line")
+                        Switch(status, { status = it }); Text("  Always show status line (burn-in risk)")
                     }
+                    Text("Screen brightness: ${(bright * 100).toInt()}%")
+                    Slider(value = bright, onValueChange = { bright = it }, valueRange = 0.1f..1f)
                     Text("Paired body: $paired", fontSize = 12.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(forget, { forget = it }); Text("  Forget body and scan again")
@@ -525,9 +592,11 @@ class MainActivity : ComponentActivity() {
                     low.toFloatOrNull()?.let { prefs.lowBattery = it }
                     prefs.invertSteer = invert
                     prefs.showStatus = status
+                    prefs.brightness = bright
                     prefs.speedPercent = speed
                     prefs.gestures = gestures
                     prefs.wakeRequired = wake
+                    prefs.autoMove = autoMove
                     if (birthday.isBlank() || Regex("\\d{2}-\\d{2}").matches(birthday.trim())) prefs.birthday = birthday
                     if (forget) prefs.robotAddress = ""
                     onSaved()

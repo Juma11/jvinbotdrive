@@ -238,3 +238,19 @@ To add a command: add the phrase to `Commands.kt`, then handle it in `Brain.hand
 5. A clap or sudden loud sound makes it look around: "You called?"
 
 Quota guard: at most 3 AI requests per question, 2 s between questions, 300 per day.
+
+## Movement rules (v9.1)
+
+- By default the wheels only move within 15 s of a command, a hand sign, or during a game. Without one, it still reacts with its face and voice, but stays put.
+- "follow me" / "come here" turns following on until you say "stop".
+- Settings > "Moves on its own" brings back free following and wandering.
+- Settings > "Wake word needed for commands": switch OFF for instant commands (about half a second). Questions still need "hey vinbot".
+- The status line starts with the version, e.g. `v9.14` = GitHub build 14. If it does not match your latest build, the new build failed or did not install.
+
+## Galaxy A32 and other AMOLED phones (v9.2)
+
+- 8-core phones are detected automatically: bigger camera frames, more hand checks, more smile/eye checks.
+- Burn-in guard: the status line shows for 30 s after start or after saving settings, then hides. Errors show for 20 s. The whole face drifts a few pixels every 2 minutes. The screen dims while it sleeps.
+- Settings > Screen brightness (default 55%). Keep it at 60% or lower on AMOLED.
+- On first start it asks to ignore battery optimisation. Say Allow, or Samsung will throttle it.
+- Keys are stored per phone: paste your Groq key again on the new phone.
