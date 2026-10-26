@@ -143,10 +143,11 @@ class RobotLink(
         }
         status.value = "searching for body"
         scanning = true
-        val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE)).build()
+        // No hardware filter: some Samsung phones never report devices through a
+        // 128-bit service UUID filter. We check the name and UUID ourselves instead.
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
         try {
-            scanner.startScan(listOf(filter), settings, scanCallback)
+            scanner.startScan(null, settings, scanCallback)
         } catch (e: Exception) {
             Log.e(TAG, "Scan failed to start", e)
             scanning = false
@@ -156,9 +157,9 @@ class RobotLink(
         handler.postDelayed({
             if (scanning) {
                 stopScan()
-                retryLater(1000)
+                retryLater(2000) // Android blocks apps that start more than 5 scans in 30 s
             }
-        }, 10_000)
+        }, 12_000)
     }
 
     private fun stopScan() {
@@ -173,6 +174,10 @@ class RobotLink(
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (!scanning) return
+            val record = result.scanRecord
+            val name = record?.deviceName ?: result.device.name
+            val hasService = record?.serviceUuids?.any { it.uuid == SERVICE } == true
+            if (name != "JVinBuddy" && !hasService) return
             stopScan()
             Log.i(TAG, "Found body ${result.device.address}")
             prefs.robotAddress = result.device.address

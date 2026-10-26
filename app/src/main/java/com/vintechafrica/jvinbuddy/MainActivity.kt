@@ -210,6 +210,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Let go of the body when the app is in the background, so another phone can take it. */
+    override fun onStop() {
+        super.onStop()
+        link.shutdown()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (::link.isInitialized && bluetoothPermissions.all { granted(it) }) link.start()
+    }
+
     override fun onResume() {
         super.onResume()
         hideSystemBars()
