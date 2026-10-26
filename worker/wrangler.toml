@@ -4,7 +4,7 @@ compatibility_date = "2026-10-01"
 
 [vars]
 PROVIDER = "gemini"          # or "claude"
-MODEL = "gemini-2.5-flash"   # for claude use e.g. "claude-haiku-5-5"
+MODEL = "gemini-3.5-flash-lite"   # for claude use e.g. "claude-haiku-5-5"
 ROBOT_NAME = "VinBot"
 OWNER_NAME = "Vincent"
 

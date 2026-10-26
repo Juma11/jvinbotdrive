@@ -4,6 +4,11 @@ import android.content.Context
 
 /** Settings saved on the phone. Nothing secret lives in the code or the repo. */
 class Prefs(context: Context) {
+    companion object {
+        /** Gemini 2.5 models are closed to new projects (Oct 2026). Fast, cheap 3.x model for spoken replies. */
+        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+    }
+
     private val sp = context.getSharedPreferences("jvinbuddy", Context.MODE_PRIVATE)
 
     var workerUrl: String
@@ -20,7 +25,7 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putString("geminiKey", v.trim()).apply()
 
     var geminiModel: String
-        get() = sp.getString("geminiModel", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+        get() = sp.getString("geminiModel", DEFAULT_MODEL) ?: DEFAULT_MODEL
         set(v) = sp.edit().putString("geminiModel", v.trim()).apply()
 
     /** BLE address of the paired body. Saved after the first scan; empty = scan again. */

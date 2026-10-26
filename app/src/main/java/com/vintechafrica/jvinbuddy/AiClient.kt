@@ -94,14 +94,18 @@ class AiClient(private val prefs: Prefs) {
             JSONObject().put("role", "user")
                 .put("parts", JSONArray().put(JSONObject().put("text", text)))
         )
-        // Try the chosen model twice, then a lighter model (it has its own free quota).
+        // Try the chosen model, then backups (each has its own free quota).
         // Busy (503) and per-minute limits (429) are retried after a short wait.
-        val models = listOf(prefs.geminiModel.ifBlank { "gemini-2.5-flash" }, "gemini-2.5-flash-lite").distinct()
+        // Old saved 2.5 names are skipped: Google closed them to new projects.
+        val chosen = prefs.geminiModel.ifBlank { Prefs.DEFAULT_MODEL }
+            .let { if (it.startsWith("gemini-2.")) Prefs.DEFAULT_MODEL else it }
+        val models = listOf(chosen, "gemini-3.6-flash", "gemini-flash-lite-latest", "gemini-flash-latest").distinct()
         var useSearch = true
+        var useThinking = true
         var dailyLimitHit = false
         for (model in models) {
             for (attempt in 0..1) {
-                val (code, bodyText) = callGemini(model, contents, useSearch)
+                val (code, bodyText) = callGemini(model, contents, useSearch, useThinking)
                 if (code in 200..299) {
                     lastError.value = ""
                     return parseReply(extractText(bodyText))
@@ -116,7 +120,8 @@ class AiClient(private val prefs: Prefs) {
                         throw BrainError("My Gemini key is not working. Check it in settings.")
                     code == 401 || code == 403 ->
                         throw BrainError("My Gemini key is not allowed. Check it in settings.")
-                    code == 400 && useSearch -> useSearch = false          // retry without web search
+                    code == 400 && useThinking -> useThinking = false      // retry without the thinking setting
+                    code == 400 && useSearch -> useSearch = false          // then without web search
                     code == 429 && msg.contains("day", ignoreCase = true) -> {
                         dailyLimitHit = true
                         break                                              // next model
@@ -131,18 +136,16 @@ class AiClient(private val prefs: Prefs) {
         throw BrainError("Google's brain is busy right now. Ask me again in a minute.")
     }
 
-    private fun callGemini(model: String, contents: JSONArray, useSearch: Boolean): Pair<Int, String> {
+    private fun callGemini(model: String, contents: JSONArray, useSearch: Boolean, useThinking: Boolean): Pair<Int, String> {
+        val gen = JSONObject()
+            .put("maxOutputTokens", 1024)
+            .put("temperature", 0.8)
+        // Minimal thinking: fast replies, and thinking cannot eat the reply budget.
+        if (useThinking) gen.put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal"))
         val body = JSONObject()
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
             .put("contents", contents)
-            .put(
-                "generationConfig",
-                JSONObject()
-                    .put("maxOutputTokens", 400)
-                    .put("temperature", 0.8)
-                    // No hidden "thinking": faster replies, and it cannot eat the 400-token limit.
-                    .put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
-            )
+            .put("generationConfig", gen)
         if (useSearch) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
 
         val request = Request.Builder()

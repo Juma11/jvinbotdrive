@@ -60,7 +60,7 @@ function cleanHistory(history) {
 }
 
 async function askGemini(env, history, text) {
-  const model = env.MODEL || "gemini-2.5-flash";
+  const model = env.MODEL || "gemini-3.5-flash-lite";
   const contents = history.map((h) => ({
     role: h.role === "assistant" ? "model" : "user",
     parts: [{ text: h.text }],
