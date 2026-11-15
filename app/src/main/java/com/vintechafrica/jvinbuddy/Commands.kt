@@ -16,9 +16,9 @@ object Commands {
      * by Vosk automatically, so extra variants are harmless.
      */
     val WAKE = listOf(
-        "hey vin bot", "hey vin", "hey ben bot", "hey bin bot", "hey been bot",
-        "hey win bot", "hey when bot", "a vin bot", "hey robot",
-        "hello robot", "okay robot", "hey buddy",
+        "vortex", "hey vortex", "hi vortex", "okay vortex",
+        "vertex", "hey vertex",
+        "hey robot", "hello robot", "okay robot", "hey buddy", "hey vin bot",
     )
 
     /** Work with no wake word, always. Safety first. */
