@@ -18,6 +18,7 @@ object Commands {
     val WAKE = listOf(
         "hey vin bot", "hey vin", "hey ben bot", "hey bin bot", "hey been bot",
         "hey win bot", "hey when bot", "a vin bot", "hey robot",
+        "hello robot", "okay robot", "hey buddy",
     )
 
     /** Work with no wake word, always. Safety first. */
@@ -74,6 +75,14 @@ object Commands {
     fun isWake(text: String): Boolean = normalize(text) in WAKE
 
     fun isAlways(text: String): Boolean = normalize(text) in ALWAYS
+
+    fun isPhrase(text: String): Boolean = normalize(text) in PHRASES
+
+    /** True if a longer phrase starts with this one ("sing" -> "sing a song"): wait a little longer. */
+    fun isPrefix(text: String): Boolean {
+        val t = normalize(text)
+        return t.isNotEmpty() && (PHRASES + WAKE).any { it.startsWith("$t ") }
+    }
 
     fun normalize(text: String): String =
         text.lowercase().replace(Regex("[^a-z ]"), " ").replace(Regex("\\s+"), " ").trim()

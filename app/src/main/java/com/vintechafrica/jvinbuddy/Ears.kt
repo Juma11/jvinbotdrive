@@ -147,6 +147,8 @@ class Ears(
         var noise = 300.0
         var lastClap = 0L
         var wasPaused = false
+        var lastPartial = ""
+        var partialChunks = 0
 
         // Capture state
         var capturing = false
@@ -197,7 +199,7 @@ class Ears(
                     val speech = rms > noise * 2.5 + 250
                     if (speech) { spoke = true; quietSince = 0L } else if (quietSince == 0L) quietSince = now
                     val elapsed = now - capStart
-                    val done = (spoke && quietSince > 0 && now - quietSince > 900) ||
+                    val done = (spoke && quietSince > 0 && now - quietSince > 600) ||
                         elapsed > 7000 || (!spoke && elapsed > 4000)
                     if (done) {
                         capturing = false
@@ -227,10 +229,22 @@ class Ears(
                 }
                 if (rec.acceptWaveForm(bytes, n * 2)) {
                     val (text, conf) = parse(rec.result)
+                    lastPartial = ""
+                    partialChunks = 0
                     if (text.isNotEmpty() && conf >= minConf(text)) main.post { onPhrase(text) }
                 } else {
-                    val partial = try { JSONObject(rec.partialResult).optString("partial") } catch (_: Exception) { "" }
+                    val partial = try { JSONObject(rec.partialResult).optString("partial").trim() } catch (_: Exception) { "" }
                     if (partial == "stop" || partial == "freeze") main.post { onUrgentStop() }
+                    // Real time: act on a phrase once it has been steady, without waiting for silence.
+                    if (partial.isNotEmpty() && partial == lastPartial) partialChunks++ else { lastPartial = partial; partialChunks = 1 }
+                    val need = if (Commands.isPrefix(partial)) EARLY_CHUNKS_PREFIX else EARLY_CHUNKS
+                    if (partial.isNotEmpty() && partialChunks >= need && (Commands.isWake(partial) || Commands.isPhrase(partial))) {
+                        val fired = partial
+                        lastPartial = ""
+                        partialChunks = 0
+                        rec.reset()
+                        main.post { onPhrase(fired) }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -265,13 +279,16 @@ class Ears(
     /** Wake words need more certainty than commands; "stop" needs the least. */
     private fun minConf(text: String): Float = when {
         Commands.isAlways(text) -> 0.6f
-        Commands.isWake(text) -> 0.9f
-        else -> 0.8f
+        Commands.isWake(text) -> 0.6f
+        else -> 0.65f
     }
 
     companion object {
         private const val TAG = "Ears"
         const val RATE = 16000
         private const val CHUNK = 1600 // 100 ms
+        /** Steady 100 ms chunks before a phrase fires early. Raise these if it triggers by mistake. */
+        private const val EARLY_CHUNKS = 2
+        private const val EARLY_CHUNKS_PREFIX = 4
     }
 }

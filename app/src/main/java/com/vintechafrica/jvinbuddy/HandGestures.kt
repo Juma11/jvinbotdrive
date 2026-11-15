@@ -208,14 +208,14 @@ class HandGestures(
             return
         }
         val holdMs = when (sign) {
-            HandSign.GUN -> 250L
+            HandSign.GUN -> 150L
             HandSign.WAVE, HandSign.PALM_STOP -> 0L // already time-based
-            HandSign.POINT_LEFT, HandSign.POINT_RIGHT -> 500L
-            else -> 400L
+            HandSign.POINT_LEFT, HandSign.POINT_RIGHT -> 300L
+            else -> 200L
         }
         if (ts - candidateSince < holdMs) return
         if (sign == lastFired) return            // hand must change first
-        if (ts - lastFiredAt < 1500) return      // global cooldown
+        if (ts - lastFiredAt < 800) return       // global cooldown
         lastFired = sign
         lastFiredAt = ts
         if (sign == HandSign.WAVE) palm.clear()

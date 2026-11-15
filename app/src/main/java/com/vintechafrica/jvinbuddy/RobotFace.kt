@@ -76,11 +76,11 @@ fun RobotFace(
     }
 
     // ---------------------------------------------------------------- animated values
-    val slow = tween<Float>(260)
+    val slow = tween<Float>(150)
     val curiousTilt = if (emotion == Emotion.CURIOUS) 0.8f else 1f
-    val openL by animateFloatAsState(if (blink) 0.06f else emotion.eyeOpen, tween(if (blink) 70 else 260), label = "openL")
+    val openL by animateFloatAsState(if (blink) 0.06f else emotion.eyeOpen, tween(if (blink) 70 else 150), label = "openL")
     val openR by animateFloatAsState(
-        if (blink || winking) 0.06f else emotion.eyeOpen * curiousTilt, tween(if (blink || winking) 70 else 260), label = "openR"
+        if (blink || winking) 0.06f else emotion.eyeOpen * curiousTilt, tween(if (blink || winking) 70 else 150), label = "openR"
     )
     val lidTop by animateFloatAsState(emotion.lidTop, slow, label = "lidTop")
     val lidTilt by animateFloatAsState(emotion.lidTilt, slow, label = "lidTilt")
@@ -104,8 +104,8 @@ fun RobotFace(
         Emotion.SHY, Emotion.SAD, Emotion.CRYING -> 0.5f
         else -> lookY
     }
-    val lx by animateFloatAsState(targetX.coerceIn(-1f, 1f), spring(0.75f, 140f), label = "lx")
-    val ly by animateFloatAsState(targetY.coerceIn(-1f, 1f), spring(0.75f, 140f), label = "ly")
+    val lx by animateFloatAsState(targetX.coerceIn(-1f, 1f), spring(0.8f, 500f), label = "lx")
+    val ly by animateFloatAsState(targetY.coerceIn(-1f, 1f), spring(0.8f, 500f), label = "ly")
     val curve by animateFloatAsState(emotion.mouthCurve, slow, label = "curve")
     val brow by animateFloatAsState(emotion.browTilt, slow, label = "brow")
     val color by animateColorAsState(Color(emotion.color), tween(400), label = "color")

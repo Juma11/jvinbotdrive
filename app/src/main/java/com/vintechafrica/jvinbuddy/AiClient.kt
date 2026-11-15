@@ -193,8 +193,14 @@ class AiClient(private val prefs: Prefs) {
     }
 
     // ---------------------------------------------------------------- Groq
+    /** Web search adds seconds. Use it only for questions about fresh facts. */
+    private fun needsSearch(text: String): Boolean = Regex(
+        "\\b(today|tonight|tomorrow|now|latest|news|weather|price|prices|score|who won|current|this week|this year|20[2-9][0-9])\\b",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(text)
+
     private fun askGroq(text: String): Pair<Emotion, String> {
-        var useSearch = true
+        var useSearch = needsSearch(text)
         var useEffort = true
         for (attempt in 0..2) {
             val messages = JSONArray().put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
