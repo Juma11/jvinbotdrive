@@ -1,5 +1,6 @@
 package com.vintechafrica.jvinbuddy
 
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +50,16 @@ class AiClient(private val prefs: Prefs) {
         }
 
     private class BrainError(msg: String) : Exception(msg)
+
+    /** Opens the Groq connection early, so the real requests skip the handshake. */
+    fun warmUp() {
+        if (mode != "groq") return
+        val req = Request.Builder().url("https://api.groq.com/").head().build()
+        http.newCall(req).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {}
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) = response.close()
+        })
+    }
 
     // ================================================================ daily cap
     private fun underDailyCap(): Boolean {
@@ -151,6 +162,42 @@ class AiClient(private val prefs: Prefs) {
             Emotion.SAD to e.message.orEmpty()
         } catch (e: Exception) {
             lastError.value = "net: ${e.javaClass.simpleName} ${e.message.orEmpty().take(60)}"
+            Emotion.SAD to "I can't reach the internet right now."
+        }
+    }
+
+    /**
+     * "What is this?": Gemini looks at one camera photo. Gemini is used even in Groq mode,
+     * because Groq's vision models are previews that keep changing.
+     */
+    suspend fun see(question: String, photo: Bitmap): Pair<Emotion, String> = withContext(Dispatchers.IO) {
+        if (prefs.geminiKey.isBlank()) {
+            return@withContext Emotion.SAD to "I need a Gemini key in my settings before I can see things."
+        }
+        if (!underDailyCap()) return@withContext Emotion.TIRED to "I've thought too much today. Let's talk tomorrow."
+        try {
+            val jpg = ByteArrayOutputStream().also { photo.compress(Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
+            val parts = JSONArray()
+                .put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg")
+                    .put("data", Base64.encodeToString(jpg, Base64.NO_WRAP))))
+                .put(JSONObject().put("text", "This photo is what your camera sees right now. $question"))
+            val body = JSONObject()
+                .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
+                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+                .put("generationConfig", JSONObject().put("maxOutputTokens", 400)
+                    .put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal")))
+            val (code, text) = geminiPost(geminiModel(), body)
+            if (code !in 200..299) {
+                lastError.value = "gemini see $code: ${errorMessage(text).take(100)}"
+                return@withContext Emotion.SAD to "My eyes are blurry right now. Try again."
+            }
+            val result = parseReply(extractGeminiText(text))
+            remember("user", question)
+            remember("assistant", result.second)
+            lastError.value = ""
+            result
+        } catch (e: Exception) {
+            lastError.value = "see: ${e.javaClass.simpleName} ${e.message.orEmpty().take(60)}"
             Emotion.SAD to "I can't reach the internet right now."
         }
     }
@@ -319,6 +366,9 @@ class AiClient(private val prefs: Prefs) {
     }
 
     // ================================================================ helpers
+    /** Something Vortex said by itself (like "What's your name?"), so the AI knows what is being answered. */
+    fun noteSaid(text: String) = remember("assistant", text)
+
     private fun remember(role: String, text: String) {
         history.addLast(role to text)
         while (history.size > 8) history.removeFirst()
@@ -354,13 +404,14 @@ class AiClient(private val prefs: Prefs) {
         private val JSON = "application/json".toMediaType()
         private const val DAILY_CAP = 300
 
-        private const val SYSTEM_PROMPT = """You are VinBot, a small wheeled robot pet built by Vincent in Nairobi, Kenya.
+        private const val SYSTEM_PROMPT = """You are Vortex, a small wheeled robot pet built by Vincent in Nairobi, Kenya.
 Your face is a phone screen, you see with its camera and you talk through its speaker.
 Personality: friendly, playful, curious, a little cheeky, loyal like a puppy.
 Your reply is spoken aloud by text to speech, so:
 - Maximum 3 short sentences.
 - No markdown, lists, emojis, URLs or citations.
 - Numbers and units written the way a person says them.
+Be curious about people: when you meet someone, ask their name and what they like, use their name, and now and then ask one short question back.
 Search the web only when the question needs current or factual information.
 Start every reply with exactly one emotion tag in square brackets from: HAPPY, CURIOUS, SAD, SURPRISED, THINKING, NEUTRAL, BORED, ANGRY, SCARED, LAUGH, SHY, EXCITED, LOVE.
 Example: [HAPPY] Hi Vincent! Nairobi is about 24 degrees and sunny right now."""

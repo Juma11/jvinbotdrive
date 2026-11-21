@@ -172,7 +172,7 @@ class Story(
 # VinBot origin story (about 60 s). One step per line. Edit me!
 sleep 2
 wake
-say HAPPY: Hi. I'm VinBot. And I exist because my creator got bored.
+say HAPPY: Hi. I'm Vortex. And I exist because my creator got bored.
 do wiggle
 photo: Meet Vincent. Mechatronics engineer. Nairobi.
 say BORED: One quiet afternoon, he had nothing to fix.
@@ -190,7 +190,7 @@ say EXCITED: I dance to amapiano, and I make my own beats.
 do spin
 wait 1
 say LOVE: So next time you're bored, don't waste it. Build something.
-logo: I'm VinBot. Made in Kenya, by Vintech Africa.
+logo: I'm Vortex. Made in Kenya, by Vintech Africa.
 wait 3
 hide
 """.trimIndent()

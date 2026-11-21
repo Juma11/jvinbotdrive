@@ -73,6 +73,7 @@ class Ears(
 
     fun stop() {
         wantRunning = false
+        captureRequested = false
         thread?.interrupt()
         thread = null
         if (model != null) status.value = "ears off"

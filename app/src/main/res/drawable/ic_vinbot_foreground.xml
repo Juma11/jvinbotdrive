@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VinBot app icon face. 108dp adaptive icon canvas, all parts inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M54,42 L54,33"
+        android:strokeColor="#FF22D3EE"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+    <path android:pathData="M50,29 A4,4 0 1 1 58,29 A4,4 0 1 1 50,29 Z"
+        android:fillColor="#FFFACC15" />
+    <path android:pathData="M26,54 H26 A3,3 0 0 1 29,57 V67 A3,3 0 0 1 26,70 H26 A3,3 0 0 1 23,67 V57 A3,3 0 0 1 26,54 Z"
+        android:fillColor="#FF0EA5E9" />
+    <path android:pathData="M82,54 H82 A3,3 0 0 1 85,57 V67 A3,3 0 0 1 82,70 H82 A3,3 0 0 1 79,67 V57 A3,3 0 0 1 82,54 Z"
+        android:fillColor="#FF0EA5E9" />
+    <path android:pathData="M42,41 H66 A13,13 0 0 1 79,54 V69 A13,13 0 0 1 66,82 H42 A13,13 0 0 1 29,69 V54 A13,13 0 0 1 42,41 Z"
+        android:fillColor="#FF0B1B2E"
+        android:strokeColor="#FF22D3EE"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+    <path android:pathData="M43.0,51 H45.0 A4.5,4.5 0 0 1 49.5,55.5 V60.5 A4.5,4.5 0 0 1 45.0,65 H43.0 A4.5,4.5 0 0 1 38.5,60.5 V55.5 A4.5,4.5 0 0 1 43.0,51 Z"
+        android:fillColor="#FF22D3EE" />
+    <path android:pathData="M63.0,51 H65.0 A4.5,4.5 0 0 1 69.5,55.5 V60.5 A4.5,4.5 0 0 1 65.0,65 H63.0 A4.5,4.5 0 0 1 58.5,60.5 V55.5 A4.5,4.5 0 0 1 63.0,51 Z"
+        android:fillColor="#FF22D3EE" />
+    <path android:pathData="M44.2,54.5 A1.8,1.8 0 1 1 47.8,54.5 A1.8,1.8 0 1 1 44.2,54.5 Z"
+        android:fillColor="#FFE0FBFF" />
+    <path android:pathData="M64.2,54.5 A1.8,1.8 0 1 1 67.8,54.5 A1.8,1.8 0 1 1 64.2,54.5 Z"
+        android:fillColor="#FFE0FBFF" />
+    <path android:pathData="M48,71 Q54,76 60,71"
+        android:strokeColor="#FF22D3EE"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round" />
+</vector>

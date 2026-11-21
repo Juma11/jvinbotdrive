@@ -73,7 +73,7 @@ class Dj(
         stopAll()
         val s = style ?: Synth.Style.entries.random()
         job = scope.launch {
-            brain.react(Emotion.EXCITED, listOf("Drop the beat!", "${s.spoken.replaceFirstChar { it.uppercase() }} vibes, let's go!", "DJ VinBot in the house!").random(), 2500)
+            brain.react(Emotion.EXCITED, listOf("Drop the beat!", "${s.spoken.replaceFirstChar { it.uppercase() }} vibes, let's go!", "DJ Vortex in the house!").random(), 2500)
             val pcm = withContext(Dispatchers.Default) { Synth.toPcm(Synth.renderBeat(s, 4)) }
             delay(1800)
             track = Synth.play(pcm, loop = true)
@@ -139,8 +139,8 @@ class Dj(
             delay(1200)
             val bar = 4 * 60_000L / s.bpm
             track = Synth.play(pcm, loop = true).also { it.setVolume(0.55f) }
-            nowPlaying.value = "VinBot rap (${s.spoken})"
-            brain.overlay.value = "🎤 VinBot ft. ${s.spoken} beat"
+            nowPlaying.value = "Vortex rap (${s.spoken})"
+            brain.overlay.value = "🎤 Vortex ft. ${s.spoken} beat"
             val total = bar * (lines.size + 2)
             brain.danceTo(s.bpm, total)
             val t0 = SystemClock.elapsedRealtime()
@@ -153,7 +153,7 @@ class Dj(
             }
             delay(((lines.size + 2) * bar - (SystemClock.elapsedRealtime() - t0)).coerceAtLeast(0))
             stopAll()
-            brain.react(Emotion.EXCITED, listOf("Thank you, thank you! VinBot out.", "Mic drop!").random(), 2500)
+            brain.react(Emotion.EXCITED, listOf("Thank you, thank you! Vortex out.", "Mic drop!").random(), 2500)
             brain.perform(Brain.Move.CELEBRATE)
         }
     }
@@ -162,7 +162,7 @@ class Dj(
         if (Net.online(context) && ai.mode != "none") {
             val about = topic ?: listOf("being a robot in Nairobi", "friendship", "dancing", "my day with Vincent").random()
             val text = ai.complete(
-                "Write an original, family friendly rap song about $about for a cute robot called VinBot. " +
+                "Write an original, family friendly rap song about $about for a cute robot called Vortex. " +
                     "Exactly 8 lines, 6 to 9 words each, rhyming in pairs, fun and upbeat. " +
                     "One line per row. No title, no numbering, no emojis, lyrics only."
             )

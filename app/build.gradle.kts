@@ -77,3 +77,33 @@ dependencies {
     // Offline hand gestures. The model is downloaded by the GitHub workflow into assets.
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
 }
+
+// Android Studio builds: download the two models the GitHub workflow fetches.
+// Skips when they already exist, so GitHub builds are unchanged.
+val fetchModels by tasks.registering {
+    doLast {
+        val assets = file("src/main/assets").apply { mkdirs() }
+        fun download(url: String, to: File) {
+            val part = File(to.path + ".part")
+            uri(url).toURL().openStream().use { i -> part.outputStream().use { i.copyTo(it) } }
+            part.renameTo(to)
+        }
+        val gesture = File(assets, "gesture_recognizer.task")
+        if (!gesture.exists()) {
+            download("https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task", gesture)
+        }
+        val model = File(assets, "model-en-us")
+        if (!File(model, "uuid").exists()) {
+            val zip = layout.buildDirectory.file("vosk-model.zip").get().asFile.apply { parentFile.mkdirs() }
+            if (!zip.exists()) download("https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip", zip)
+            delete(model)
+            copy {
+                from(zipTree(zip)) { eachFile { path = path.substringAfter("/") } }
+                includeEmptyDirs = false
+                into(model)
+            }
+            File(model, "uuid").writeText("small-en-us-0.15\n")
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(fetchModels) }

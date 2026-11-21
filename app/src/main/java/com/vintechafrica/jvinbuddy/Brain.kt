@@ -25,6 +25,8 @@ class Brain(
     private val speak: (String, Emotion) -> Unit,
 ) {
     lateinit var dj: Dj
+    /** Vortex asked someone a question out loud: MainActivity listens for the answer. */
+    var onAsk: (String) -> Unit = {}
     val emotion = MutableStateFlow(Emotion.NEUTRAL)
     val lookX = MutableStateFlow(0f)   // -1 left .. 1 right, as seen on the screen
     val lookY = MutableStateFlow(0f)   // -1 up .. 1 down
@@ -61,6 +63,8 @@ class Brain(
     private var face: FaceInfo? = null
     private var faceAt = 0L
     private var lastFaceSeen = SystemClock.elapsedRealtime()
+    /** Talking counts as company too, so it does not get bored or sleepy mid-conversation. */
+    private var lastTalkAt = 0L
     private var emotionLockedUntil = 0L
     private var moveJob: Job? = null
     private var deadJob: Job? = null
@@ -79,6 +83,7 @@ class Brain(
     private var lastStareReact = 0L
     private var lastCloseReact = 0L
     private var lastFriendReact = 0L
+    private var lastIntroAsk = 0L
     private var greetedPeriod = ""      // "morning", "evening"... greeted once each
     private val taps = ArrayDeque<Long>()
     private var lifted = false
@@ -176,7 +181,7 @@ class Brain(
                     delay(1200)
                     setEmotion(Emotion.HAPPY, 3000)
                     perform(Move.WIGGLE)
-                    if (gone > 60_000) speak(listOf("Hello!", "There you are!", "Hi Vincent!").random(), Emotion.HAPPY)
+                    if (gone > 60_000) speak(listOf("Hello!", "There you are!", "Hi friend!").random(), Emotion.HAPPY)
                 }
             }
         } else {
@@ -248,6 +253,8 @@ class Brain(
     }
 
     fun listeningForQuestion() {
+        lastTalkAt = SystemClock.elapsedRealtime()
+        asleep = false // a question wakes it quietly
         cancelMove()
         drive(0, 0)
         setEmotion(Emotion.CURIOUS, 8000)
@@ -274,7 +281,22 @@ class Brain(
         // A second person appears
         if (f.count >= 2 && now - lastFriendReact > 60_000 && !busy) {
             lastFriendReact = now
-            react(Emotion.CURIOUS, listOf("Ooh, who's your friend?", "Two humans! Hello!", "A new friend!").random(), 3000)
+            askAloud(Emotion.CURIOUS, listOf(
+                "Ooh, a new friend! What's your name?",
+                "Two humans! Hello! Who are you?",
+                "Hi there! I'm Vortex. What's your name?",
+            ).random())
+            perform(Move.WIGGLE_SMALL)
+            return true
+        }
+        // Someone shows up after a long time: could be a visitor, so be curious (at most once an hour)
+        if (gone > 15 * 60_000 && now - lastIntroAsk > 60 * 60_000 && !busy) {
+            lastIntroAsk = now
+            askAloud(Emotion.CURIOUS, listOf(
+                "Oh, hello! Is that a new friend? What's your name?",
+                "Hello! What have you been up to?",
+                "Hey! What do you like to do for fun?",
+            ).random())
             perform(Move.WIGGLE_SMALL)
             return true
         }
@@ -284,7 +306,7 @@ class Brain(
             if (period != greetedPeriod) {
                 greetedPeriod = period
                 val line = when (period) {
-                    "morning" -> "Good morning Vincent!"
+                    "morning" -> "Good morning!"
                     "afternoon" -> "Good afternoon!"
                     "evening" -> "Good evening! How was your day?"
                     else -> "It's late. You should sleep soon."
@@ -360,6 +382,21 @@ class Brain(
         }
     }
 
+    /** Light sensor: sudden bright light, or the lights going out. */
+    fun onLight(brighter: Boolean) {
+        if (dead || lifted || paused || inActivity()) return
+        if (brighter) {
+            if (asleep) { wake(); return }
+            cancelMove()
+            react(Emotion.SURPRISED, listOf("Whoa, bright!", "My eyes!", "Who turned on the sun?").random(), 2500)
+            perform(Move.BACK_OFF)
+        } else {
+            if (asleep) return
+            react(Emotion.SCARED, listOf("Hey, who turned off the lights?", "It's dark. I'm scared.", "Hello? Anyone there?").random(), 3500)
+            perform(Move.TREMBLE)
+        }
+    }
+
     /** Phone shaken hard several times. */
     fun onShaken() {
         if (asleep || dead) return
@@ -378,7 +415,12 @@ class Brain(
             asleep = false
             react(Emotion.SCARED, listOf("Whoa! Put me down!", "I'm flying!", "Careful, I'm fragile!").random(), 60_000)
         } else {
-            react(Emotion.HAPPY, listOf("Phew, solid ground.", "Thanks for putting me down.", "Home sweet floor.").random(), 2500)
+            // Put down, maybe somewhere new: be curious about the place
+            askAloud(Emotion.CURIOUS, listOf(
+                "Ooh, a new place! Where are we?",
+                "Phew, solid ground. Where am I now?",
+                "New spot! What is this place?",
+            ).random())
             perform(Move.WIGGLE_SMALL)
         }
     }
@@ -596,7 +638,8 @@ class Brain(
     }
 
     fun answered(e: Emotion, reply: String) {
-        react(e, reply)
+        lastTalkAt = SystemClock.elapsedRealtime()
+        react(e, reply, 4000L + reply.length * 70L) // hold the face while it speaks
         when (e) {
             Emotion.HAPPY -> perform(Move.WIGGLE_SMALL)
             Emotion.SURPRISED -> perform(Move.BACK_OFF)
@@ -930,6 +973,12 @@ class Brain(
         perform(Move.WIGGLE)
     }
 
+    /** Ask a question out loud, then listen for the answer (no wake word needed). */
+    private fun askAloud(e: Emotion, line: String) {
+        react(e, line, 3500)
+        onAsk(line)
+    }
+
     fun react(e: Emotion, text: String, holdMs: Long = 4000) {
         setEmotion(e, holdMs)
         speak(text, e)
@@ -952,7 +1001,7 @@ class Brain(
         } else if (asleep) {
             emotion.value = Emotion.SLEEPY
         } else if (now > emotionLockedUntil) {
-            val since = now - lastFaceSeen
+            val since = now - maxOf(lastFaceSeen, lastTalkAt)
             // Falls asleep faster late at night
             val sleepAfter = if (dayPeriod() == "night") 60_000L else sleepAfterMs
             emotion.value = when {
@@ -1070,7 +1119,7 @@ class Brain(
             }
             needs.fun_ < 25f && faceFresh() -> {
                 lastNeedNag = now
-                react(Emotion.BORED, "I'm bored. Let's play a game! Say hey vinbot, rock paper scissors.", 4000)
+                react(Emotion.BORED, "I'm bored. Let's play a game! Say Vortex, rock paper scissors.", 4000)
                 perform(Move.HOP)
             }
             needs.social < 20f && faceFresh() -> {

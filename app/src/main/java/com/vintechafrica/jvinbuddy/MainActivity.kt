@@ -64,6 +64,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -91,6 +92,13 @@ class MainActivity : ComponentActivity() {
 
     /** After a wake word with no internet: offline commands accepted until this time. */
     private var armedUntil = 0L
+    /** Conversation mode: after an answer, listen again with no wake word. Silence ends it. */
+    private var followUp = false
+    /** Questions that need its eyes: a photo goes to the AI. */
+    private val SEE = Regex(
+        "what is this|what s this|whats this|what am i holding|what do you see|what can you see|look at this|" +
+            "what colou?r is|read this|what does (this|it) say|describe (this|what you see)|is this a|can you see"
+    )
     /** What it heard last, shown at the bottom so you can see how well it hears. */
     private val lastHeard = kotlinx.coroutines.flow.MutableStateFlow("")
 
@@ -161,6 +169,10 @@ class MainActivity : ComponentActivity() {
             speak = { text, emotion -> voice.say(text, emotion) },
         )
         ai = AiClient(prefs)
+        brain.onAsk = { line ->
+            ai.noteSaid(line)
+            followUp = true // listen for the answer once it finishes speaking
+        }
         hands = try {
             HandGestures(
                 this, prefs,
@@ -180,6 +192,7 @@ class MainActivity : ComponentActivity() {
             onBump = { brain.onBump() },
             onShake = { brain.onShaken() },
             onLift = { up -> brain.onLifted(up) },
+            onLight = { brighter -> brain.onLight(brighter) },
             isDriving = { brain.isDriving },
         )
 
@@ -191,7 +204,10 @@ class MainActivity : ComponentActivity() {
                 if (talking) ears.setPause(true)
                 else {
                     delay(700)
-                    if (!voice.speaking.value) ears.setPause(false)
+                    if (!voice.speaking.value) {
+                        ears.setPause(false)
+                        if (followUp) askQuestion()
+                    }
                 }
             }
         }
@@ -263,6 +279,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         hideSystemBars()
         senses.start()
+        voice.muted = false
         if (granted(Manifest.permission.RECORD_AUDIO)) ears.start()
     }
 
@@ -270,6 +287,11 @@ class MainActivity : ComponentActivity() {
         super.onPause()
         senses.stop()
         brain.needs.save()
+        // Left the app: stop listening, talking and music until it is back on screen.
+        followUp = false
+        voice.muted = true
+        voice.silence()
+        brain.dj.stopAll()
         ears.stop()
         link.stop()
     }
@@ -312,9 +334,11 @@ class MainActivity : ComponentActivity() {
 
     /** Wake word or double tap: record the next sentence with our own mic. No Google, no beeps. */
     private fun askQuestion() {
+        followUp = false
         brain.paused = true
         brain.listeningForQuestion()
         link.stop()
+        ai.warmUp() // connect to the AI while you are still talking
         ears.capture()
     }
 
@@ -326,16 +350,19 @@ class MainActivity : ComponentActivity() {
             return
         }
         lifecycleScope.launch {
-            // 1. Offline guess: instant, and enough for commands like "dance" or "sit"
+            // Online ears start at once, at the same time as the offline guess.
+            val remote = if (Net.online(this@MainActivity)) async { ai.transcribe(pcm) } else null
+            // 1. Offline guess: enough for commands like "dance" or "sit"
             val local = withContext(Dispatchers.Default) { ears.transcribe(pcm) }
             if (local.isNotBlank() && brain.handleCommand(local)) {
+                remote?.cancel()
                 brain.paused = false
                 return@launch
             }
             // 2. Online ears hear full sentences and accents much better
-            val heard = if (Net.online(this@MainActivity)) {
+            val heard = if (remote != null) {
                 brain.thinking()
-                ai.transcribe(pcm) ?: local
+                remote.await() ?: local
             } else local
             brain.paused = false
             if (heard.isBlank()) {
@@ -369,9 +396,28 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 2. Simple answers: local and instant.
         val online = Net.online(this)
+
+        // 1c. "What is this?": take one photo and let the AI look at it.
+        if (online && SEE.containsMatchIn(norm)) {
+            if (tracker.fps <= 0f) {
+                brain.answered(Emotion.SAD, "My camera is off, so I can't see right now.")
+                return
+            }
+            brain.thinking()
+            tracker.takePhoto { photo ->
+                lifecycleScope.launch {
+                    val (emotion, reply) = ai.see(text, photo)
+                    followUp = true
+                    brain.answered(emotion, reply)
+                }
+            }
+            return
+        }
+
+        // 2. Simple answers: local and instant.
         LocalReplies.answer(text, link.battery.value, online)?.let { (emotion, reply) ->
+            followUp = true
             brain.answered(emotion, reply)
             return
         }
@@ -385,6 +431,7 @@ class MainActivity : ComponentActivity() {
         brain.thinking()
         lifecycleScope.launch {
             val (emotion, reply) = ai.ask(text)
+            followUp = true
             brain.answered(emotion, reply)
         }
     }
@@ -626,7 +673,7 @@ class MainActivity : ComponentActivity() {
 
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("VinBot settings") },
+            title = { Text("Vortex settings") },
             text = {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()),

@@ -63,14 +63,14 @@ object Songs {
     /** Original raps for when there is no internet. */
     val offlineRaps: List<List<String>> = listOf(
         listOf(
-            "Yo, my name is VinBot and I roll so smooth",
+            "Yo, my name is Vortex and I roll so smooth",
             "Four little wheels and I got the groove",
             "Made in Nairobi, built by Vincent's hand",
             "Smartest little robot in the whole wide land",
             "I see your face and I follow you near",
             "Wave me a hello and I'm happy right here",
             "Charge me up, I'm ready to go",
-            "VinBot out, that's the end of the show",
+            "Vortex out, that's the end of the show",
         ),
         listOf(
             "Beep beep boop, let me tell you my story",
@@ -80,7 +80,7 @@ object Songs {
             "Rock paper scissors, I'm the champ of the crew",
             "Peekaboo, staring, I'm watching you",
             "Jambo Kenya, hakuna matata",
-            "VinBot style, that's the robot data",
+            "Vortex style, that's the robot data",
         ),
     )
 }

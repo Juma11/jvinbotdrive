@@ -27,10 +27,12 @@ class Voice(
 ) : TextToSpeech.OnInitListener {
 
     val listening = MutableStateFlow(false)
+    /** True while the app is in the background: nothing is spoken. */
+    @Volatile var muted = false
     val speaking = MutableStateFlow(false)
     val available = SpeechRecognizer.isRecognitionAvailable(context)
 
-    private val tts = TextToSpeech(context.applicationContext, this)
+    private val tts = TextToSpeech(context.applicationContext, this, googleEngine(context))
     private var ttsReady = false
     private val pending = AtomicInteger(0)
     private val recognizer: SpeechRecognizer? =
@@ -71,6 +73,13 @@ class Voice(
         if (uk == TextToSpeech.LANG_MISSING_DATA || uk == TextToSpeech.LANG_NOT_SUPPORTED) {
             tts.setLanguage(Locale.US)
         }
+        // Best installed English voice: highest quality, works offline, UK first, then US.
+        tts.voices?.filter { v ->
+            v.locale.language == "en" && !v.isNetworkConnectionRequired &&
+                v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true
+        }?.maxWithOrNull(
+            compareBy<android.speech.tts.Voice>({ it.quality }, { it.locale.country == "GB" }, { it.locale.country == "US" })
+        )?.let { tts.voice = it }
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             // "speaking" stays true until every queued piece is done (songs are many pieces).
             override fun onStart(utteranceId: String?) { speaking.value = true }
@@ -110,18 +119,26 @@ class Voice(
         onListenEnd()
     }
 
+    /** Stop talking now and forget anything queued. */
+    fun silence() {
+        tts.stop()
+        pending.set(0)
+        speaking.value = false
+    }
+
     fun say(text: String, emotion: Emotion) {
-        if (!ttsReady) return
+        if (!ttsReady || muted) return
         pending.set(1)
         speaking.value = true
-        tts.setPitch(emotion.pitch)
-        tts.setSpeechRate(emotion.rate)
+        // Emotions shift the voice gently; big jumps sound like a chipmunk.
+        tts.setPitch(1f + (emotion.pitch - 1f) * 0.4f)
+        tts.setSpeechRate(1f + (emotion.rate - 1f) * 0.6f)
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jvin-${System.currentTimeMillis()}")
     }
 
     /** Say a line with a custom pitch and speed (songs and raps). */
     fun sayWith(text: String, pitch: Float, rate: Float) {
-        if (!ttsReady) return
+        if (!ttsReady || muted) return
         pending.set(1)
         speaking.value = true
         tts.setPitch(pitch)
@@ -135,5 +152,16 @@ class Voice(
         tts.shutdown()
     }
 
-    companion object { private const val TAG = "Voice" }
+    companion object {
+        private const val TAG = "Voice"
+        private const val GOOGLE_TTS = "com.google.android.tts"
+
+        /** Google's voices sound far more natural than most phone makers' default engines. */
+        private fun googleEngine(context: Context): String? = try {
+            context.packageManager.getPackageInfo(GOOGLE_TTS, 0)
+            GOOGLE_TTS
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

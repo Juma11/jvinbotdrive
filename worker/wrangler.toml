@@ -5,7 +5,7 @@ compatibility_date = "2026-10-01"
 [vars]
 PROVIDER = "gemini"          # or "claude"
 MODEL = "gemini-3.5-flash-lite"   # for claude use e.g. "claude-haiku-5-5"
-ROBOT_NAME = "VinBot"
+ROBOT_NAME = "Vortex"
 OWNER_NAME = "Vincent"
 
 # Secrets, set once from this folder:

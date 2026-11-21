@@ -24,11 +24,20 @@ class Senses(
     private val onBump: () -> Unit,
     private val onShake: () -> Unit = {},
     private val onLift: (Boolean) -> Unit = {},
+    /** Light sensor: true = room suddenly much brighter, false = lights went out. */
+    private val onLight: (Boolean) -> Unit = {},
     private val isDriving: () -> Boolean = { false },
 ) : SensorEventListener {
 
     private val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val light = sm.getDefaultSensor(Sensor.TYPE_LIGHT)
+
+    // Light: slow room level, newest reading, and when it went dark
+    private var roomLux = -1f
+    private var lux = -1f
+    private var darkSince = 0L
+    private var lastLightEvent = 0L
 
     private var lastBump = 0L
     private var lastShake = 0L
@@ -46,11 +55,17 @@ class Senses(
 
     fun start() {
         accel?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        light?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
     }
 
     fun stop() = sm.unregisterListener(this)
 
     override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor.type == Sensor.TYPE_LIGHT) {
+            lux = event.values[0]
+            return
+        }
+        checkLight(SystemClock.elapsedRealtime()) // the light sensor only reports changes, so check here
         val x = event.values[0]
         val y = event.values[1]
         val z = event.values[2]
@@ -124,6 +139,30 @@ class Senses(
                 levelSince = 0L
             }
         }
+    }
+
+    private fun checkLight(now: Long) {
+        val v = lux
+        if (v < 0f) return
+        if (roomLux < 0f) { roomLux = v; return }
+        val quiet = now - lastLightEvent > 15_000
+        // Suddenly much brighter: lights on, torch, curtains opened
+        if (v > roomLux * 4 + 30) {
+            if (quiet) { lastLightEvent = now; onLight(true) }
+            roomLux = v; darkSince = 0L
+            return
+        }
+        // Lit room goes near black for 1.5 s (a hand passing by is shorter)
+        if (roomLux > 40 && v < roomLux / 8) {
+            if (darkSince == 0L) darkSince = now
+            if (now - darkSince > 1500) {
+                if (quiet) { lastLightEvent = now; onLight(false) }
+                roomLux = v; darkSince = 0L
+            }
+            return
+        }
+        darkSince = 0L
+        roomLux += 0.002f * (v - roomLux) // follows slow changes (clouds, evening)
     }
 
     private fun angleTo(b: FloatArray): Float {

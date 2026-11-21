@@ -135,7 +135,7 @@ class Games(
 
         when {
             me > you -> {
-                brain.overlay.value = "🏆 VinBot wins $me : $you"
+                brain.overlay.value = "🏆 Vortex wins $me : $you"
                 brain.react(Emotion.EXCITED, "I'm the champion! Say again for a rematch.", 4000)
                 brain.perform(Brain.Move.CELEBRATE)
             }

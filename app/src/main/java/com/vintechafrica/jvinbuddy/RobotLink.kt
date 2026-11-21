@@ -178,7 +178,7 @@ class RobotLink(
             if (!scanning) return
             // Diagnostic: how many Bluetooth devices this phone can see at all
             if (seen.add(result.device.address)) {
-                status.value = "searching for body (${seen.size} BT devices nearby, none is VinBot)"
+                status.value = "searching for body (${seen.size} BT devices nearby, none is the robot body)"
             }
             val record = result.scanRecord
             val name = record?.deviceName ?: result.device.name
@@ -210,7 +210,7 @@ class RobotLink(
 
     private fun onFailure() {
         failures++
-        status.value = "found VinBot but connection failed ($failures) - retrying"
+        status.value = "found the robot body but connection failed ($failures) - retrying"
         // A saved address that keeps failing may be a different board. Rescan.
         if (failures >= 5 && prefs.robotAddress.isNotBlank()) {
             Log.w(TAG, "Saved body unreachable, scanning again")

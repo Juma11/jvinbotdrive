@@ -70,6 +70,14 @@ class FaceTracker(
     private val main = Handler(Looper.getMainLooper())
     private var frameIndex = 0L
 
+    /** Set by takePhoto(): the next camera frame is handed over once. */
+    @Volatile private var snapshot: ((Bitmap) -> Unit)? = null
+
+    /** One photo from the camera, for "what is this?". Delivered on the main thread. */
+    fun takePhoto(onPhoto: (Bitmap) -> Unit) {
+        snapshot = onPhoto
+    }
+
     @Volatile var fps = 0f
         private set
     private var frames = 0
@@ -105,6 +113,11 @@ class FaceTracker(
     private fun analyze(proxy: ImageProxy) {
         try {
             val bitmap = upright(proxy.toBitmap(), proxy.imageInfo.rotationDegrees)
+            snapshot?.let { give ->
+                snapshot = null
+                val photo = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                main.post { give(photo) }
+            }
             frameIndex++
             val h = hands
             // Hands get 2 of every 3 frames while a hand is in view, else 1 of every 3.
